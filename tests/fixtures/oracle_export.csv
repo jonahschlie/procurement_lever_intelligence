@@ -1,0 +1,5 @@
+Supplier Name,Invoice Amount,Currency Code,Invoice Date,Invoice Num,Expense Category,Operating Unit
+Atlas Freight,15000.00,USD,2025-02-01,INV-2025-0001,Logistics,US-EAST
+Microsoft Corporation,48250.75,USD,2025-02-04,INV-2025-0002,Software,US-EAST
+Atlas Freight,9800.00,USD,2025-02-11,INV-2025-0003,Logistics,US-WEST
+Deloitte LLP,120000.00,USD,2025-02-18,INV-2025-0004,Consulting,US-EAST

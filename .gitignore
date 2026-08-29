@@ -41,6 +41,5 @@ credentials.json
 ~$*.docx
 *.tmp
 
-# Grosse oder mandantensensible Rohdaten bewusst nicht einchecken.
-# Bei Bedarf aktivieren -- Rohdaten bleiben dann rein lokal:
-# data/raw/
+# Uploaded ERP exports stay local -- client data is never committed.
+data/

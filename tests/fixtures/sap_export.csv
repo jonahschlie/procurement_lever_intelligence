@@ -1,0 +1,6 @@
+Vendor;Vendor ID;Amount LC;Currency;Posting Date;Document Number;Account Description;Company Code
+Müller Logistik GmbH;0000123456;1.250,00;EUR;2025-01-15;5100012345;Frachtkosten;DE01
+ABC Ltd;0000123457;3.400,50;EUR;2025-01-16;5100012346;Beratungsaufwand;DE01
+Schäfer Bürobedarf KG;0000123458;218,90;EUR;2025-01-17;5100012347;Bürobedarf;DE01
+Müller Logistik GmbH;0000123456;-450,00;EUR;2025-01-20;5100012348;Frachtkosten Gutschrift;DE01
+Züblin Facility Services;0000123459;12.900,00;EUR;2025-02-03;5100012349;Gebäudereinigung;DE02
