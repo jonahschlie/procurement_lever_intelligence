@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -42,3 +43,27 @@ def oracle_csv() -> bytes:
 @pytest.fixture
 def dynamics_xlsx() -> bytes:
     return (FIXTURES / "dynamics_export.xlsx").read_bytes()
+
+
+class FakeResponses:
+    """Stand-in for client.responses, capturing what an agent was asked."""
+
+    def __init__(self, parsed, *, model="gpt-5-mini-test", status="completed"):
+        self._parsed = parsed
+        self._model = model
+        self._status = status
+        self.received: dict = {}
+
+    def parse(self, **kwargs):
+        self.received = kwargs
+        return SimpleNamespace(
+            output_parsed=self._parsed,
+            model=self._model,
+            status=self._status,
+            usage=SimpleNamespace(input_tokens=1234, output_tokens=567),
+        )
+
+
+class FakeClient:
+    def __init__(self, parsed, **kwargs):
+        self.responses = FakeResponses(parsed, **kwargs)

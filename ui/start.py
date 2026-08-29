@@ -1,13 +1,16 @@
-"""Upload screen: stage ERP exports, preview them, then store them into a run."""
+"""Start screen: what the platform does, then upload and launch the analysis."""
 
 import pandas as pd
 import streamlit as st
 
+from agents.client import api_key_configured
 from core.config import ALLOWED_EXTENSIONS, PREVIEW_ROWS
 from core.models import ReadOptions
-from core.run import create_run, run_path, step_dir_name
+from core.run import create_run
 from ingestion.readers import list_sheets, read_tabular
-from ingestion.storage import STEP, StagedUpload, store_uploads
+from ingestion.storage import StagedUpload, store_uploads
+from mapping.schema_mapping import run_schema_mapping
+from ui.sidebar import render_run_sidebar
 
 
 @st.cache_data(show_spinner=False)
@@ -16,44 +19,44 @@ def _parse(data: bytes, filename: str, sheet: str | None) -> tuple[pd.DataFrame,
 
 
 def render() -> None:
-    _render_sidebar()
+    render_run_sidebar()
 
-    st.title("Data Upload")
+    st.title("Procurement Lever Intelligence")
+    st.markdown(
+        "Welcome. This platform turns the ERP exports of portfolio companies into one "
+        "standardized procurement data model, and uses it to surface value creation "
+        "levers across the portfolio: supplier consolidation, category bundling, tail "
+        "spend reduction and contract optimization.\n\n"
+        "Anything that can be calculated is calculated. Spend figures, aggregations and "
+        "quality checks never pass through a language model. AI is used only where "
+        "meaning has to be interpreted, beginning with the step below, which translates "
+        "your export's column names into the canonical procurement schema."
+    )
+    st.divider()
+
+    st.subheader("Upload ERP exports")
     st.caption(
-        "Upload one ERP export per portfolio company. Files are stored unchanged and every "
-        "value is read as text, so nothing is reinterpreted before the rule engine runs."
+        "One export per portfolio company. Files are stored unchanged and every value is "
+        "read as text, so nothing is reinterpreted before the rule engine runs."
     )
 
-    _render_store_results()
+    _render_start_results()
 
     upload_round = st.session_state.get("upload_round", 0)
     files = st.file_uploader(
-        "ERP exports",
+        "CSV or Excel export",
         type=list(ALLOWED_EXTENSIONS),
         accept_multiple_files=True,
         key=f"uploader_{upload_round}",
     )
 
-    if files:
-        staged = [_stage_file(file) for file in files]
-        readable = [item for item in staged if item.get("frame") is not None]
-        if st.button("Store datasets", type="primary", disabled=not readable):
-            _store(readable, upload_round)
+    if not files:
+        return
 
-
-def _render_sidebar() -> None:
-    with st.sidebar:
-        st.subheader("Current run")
-        run_id = st.session_state.get("run_id")
-        if run_id is None:
-            st.caption("No run started yet. Storing the first upload creates one.")
-            return
-
-        st.code(run_id, language=None)
-        st.caption(f"Artifacts and logs: {run_path(run_id)}")
-        if st.button("New run"):
-            del st.session_state["run_id"]
-            st.rerun()
+    staged = [_stage_file(file) for file in files]
+    readable = [item for item in staged if item.get("frame") is not None]
+    if st.button("Start analysis", type="primary", disabled=not readable):
+        _start_analysis(readable, upload_round)
 
 
 def _stage_file(file) -> dict:
@@ -104,29 +107,38 @@ def _describe(frame: pd.DataFrame, options: ReadOptions) -> str:
     return "  |  ".join(parts)
 
 
-def _store(staged: list[dict], upload_round: int) -> None:
+def _start_analysis(staged: list[dict], upload_round: int) -> None:
+    if not api_key_configured():
+        st.error(
+            "OPENAI_API_KEY is not set, so the schema mapping agent cannot run. "
+            "Copy .env.example to .env and add your key, then restart the app."
+        )
+        return
+
     run_id = st.session_state.get("run_id") or create_run().run_id
     st.session_state["run_id"] = run_id
-
     items = [
         StagedUpload(item["data"], item["file"].name, item["company"], item["sheet"])
         for item in staged
     ]
+
     try:
-        manifests = store_uploads(run_id, items)
+        with st.status("Running analysis", expanded=True) as status:
+            st.write(f"Storing {len(items)} dataset(s) in {run_id}")
+            store_uploads(run_id, items)
+            st.write("Mapping columns onto the canonical procurement schema")
+            run_schema_mapping(run_id)
+            status.update(label="Analysis complete", state="complete")
     except Exception as error:
-        st.session_state["store_results"] = [("error", f"Could not store datasets: {error}")]
-    else:
-        step = step_dir_name(STEP)
-        st.session_state["store_results"] = [
-            ("success", f"{m.original_filename} -> {run_id}/{step}/{m.stored_filename}")
-            for m in manifests
-        ]
+        st.session_state["start_results"] = [("error", f"Analysis failed: {error}")]
+        st.rerun()
+        return
 
     st.session_state["upload_round"] = upload_round + 1
+    st.session_state["switch_to"] = "schema_mapping"
     st.rerun()
 
 
-def _render_store_results() -> None:
-    for level, message in st.session_state.pop("store_results", []):
+def _render_start_results() -> None:
+    for level, message in st.session_state.pop("start_results", []):
         getattr(st, level)(message)

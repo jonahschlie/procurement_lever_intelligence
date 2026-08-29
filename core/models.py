@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 FileFormat = Literal["csv", "xlsx"]
+DecidedBy = Literal["ai", "user"]
 
 
 class ReadOptions(BaseModel):
@@ -46,3 +47,45 @@ class RunManifest(BaseModel):
     run_id: str
     created_at: datetime
     steps: list[StepRecord] = []
+
+
+class ColumnProfile(BaseModel):
+    """What the schema mapping agent is shown about one source column."""
+
+    name: str
+    inferred_type: str
+    null_ratio: float
+    distinct_count: int
+    sample_values: list[str]
+
+
+class FieldMapping(BaseModel):
+    """One canonical field and the source column it was matched to."""
+
+    canonical_field: str
+    source_column: str | None
+    confidence: float
+    comment: str
+    decided_by: DecidedBy = "ai"
+
+
+class LlmCall(BaseModel):
+    """Audit record of a single model call."""
+
+    model: str
+    input_tokens: int
+    output_tokens: int
+    duration_seconds: float
+
+
+class DatasetMapping(BaseModel):
+    stored_filename: str
+    original_filename: str
+    sheet: str | None
+    column_profiles: list[ColumnProfile]
+    mappings: list[FieldMapping]
+    llm_call: LlmCall
+
+
+class SchemaMappingArtifact(BaseModel):
+    datasets: list[DatasetMapping]

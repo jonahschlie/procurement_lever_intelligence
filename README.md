@@ -6,9 +6,13 @@ of it. See [SYSTEMCONCEPT.md](SYSTEMCONCEPT.md) for the architecture and functio
 
 ## Status
 
-Step 1 of the pipeline is implemented: the Streamlit app shell and the ingestion stage that
-uploads ERP exports and stores them with their parse metadata. Schema mapping, profiling, the
-rule engine and the spend cube follow.
+Implemented so far:
+
+1. **Ingestion** — upload ERP exports, preview them, store them unchanged with their parse metadata.
+2. **Schema mapping** — an LLM agent maps each export's columns onto the canonical procurement
+   schema with a confidence score and a comment; the user reviews and corrects it in the UI.
+
+Data profiling, the rule engine and the spend cube follow.
 
 ## Setup
 
@@ -16,7 +20,11 @@ Requires [uv](https://docs.astral.sh/uv/). Python 3.12 is installed and managed 
 
 ```bash
 uv sync
+cp .env.example .env    # then add your OpenAI API key
 ```
+
+`OPENAI_API_KEY` is required for the schema mapping agent. `OPENAI_MODEL` is optional and
+defaults to `gpt-5-mini`. On Streamlit Cloud the same keys are read from `st.secrets` instead.
 
 ## Run
 
@@ -38,6 +46,9 @@ runs/run_20260829_233045/
         01_sap_export.csv # the original bytes, unmodified
         02_oracle_export.csv
         ingestion.json    # per-file manifest: hash, parse options, shape
+    02_schema_mapping/
+        schema_mapping.json            # what the agent proposed, and what it cost
+        schema_mapping_confirmed.json  # what the user confirmed
 ```
 
 Later pipeline stages add their own numbered directory, so the processing order is readable off the
@@ -50,6 +61,33 @@ Runs are gitignored -- client data never enters the repository.
 Values are read as text throughout ingestion. Type inference belongs to the deterministic rule
 engine; applying it earlier would strip leading zeros from supplier IDs and misread German decimal
 formats.
+
+## Agents
+
+LLM calls live in `agents/`. An agent is an instruction file plus the pydantic model it must
+return; `agents/base.py` is the only place that talks to OpenAI, and structure is enforced by the
+API rather than parsed out of prose.
+
+```
+agents/
+    client.py                     # credentials and model, read from the environment
+    base.py                       # AgentDefinition + run_agent()
+    instructions/
+        schema_mapping.md         # what the agent is told to do
+    schema_mapping.py             # its input assembly and output model
+```
+
+Adding an agent means adding an instruction file, an output model and a thin module. The canonical
+schema in `core/canonical.py` is injected into the instructions at runtime, so the field list never
+exists in two places.
+
+The agent proposes; deterministic code decides. `mapping/schema_mapping.py` checks every answer
+against the canonical schema and the file's real columns: an invented column becomes an honest gap
+with a note, unknown fields are dropped, and confidence is clamped. A hallucination cannot reach
+the pipeline.
+
+Only column names, inferred types and at most five truncated sample values per column are sent to
+the model. What was sent is recorded in the run artifact.
 
 ## Deployment
 
