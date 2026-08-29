@@ -8,9 +8,11 @@ of it. See [SYSTEMCONCEPT.md](SYSTEMCONCEPT.md) for the architecture and functio
 
 Implemented so far:
 
-1. **Ingestion** — upload ERP exports, preview them, store them unchanged with their parse metadata.
-2. **Schema mapping** — an LLM agent maps each export's columns onto the canonical procurement
-   schema with a confidence score and a comment; the user reviews and corrects it in the UI.
+1. **Ingestion** — upload ERP exports and store them unchanged with their parse metadata.
+2. **Workbook triage** — work out what each sheet of a submission is for. Shape decides what is a
+   table; an agent decides whether a table holds transactions, FX rates or a supplier list.
+3. **Schema mapping** — an agent maps the transaction columns onto the canonical procurement schema
+   with a confidence score and a comment; the user reviews and corrects both steps in the UI.
 
 Data profiling, the rule engine and the spend cube follow.
 
@@ -43,13 +45,20 @@ runs/run_20260829_233045/
     run.json              # which step completed when, and what it wrote
     logs/run.log          # every step, chronologically
     01_ingestion/
-        01_sap_export.csv # the original bytes, unmodified
-        02_oracle_export.csv
-        ingestion.json    # per-file manifest: hash, parse options, shape
-    02_schema_mapping/
+        01_helios.xlsx    # the original bytes, unmodified
+        ingestion.json    # per-file manifest: hash, parse options, sheet names
+    02_workbook_triage/
+        workbook_triage.json            # sheet shapes and proposed roles
+        workbook_triage_confirmed.json  # confirmed roles, and the datasets they define
+    03_schema_mapping/
         schema_mapping.json            # what the agent proposed, and what it cost
         schema_mapping_confirmed.json  # what the user confirmed
 ```
+
+A file is not a dataset. A submission workbook holds a cover letter, instructions, the spend data
+and small lookup tables; triage turns the sheets worth keeping into datasets, each with a role.
+Only `transactions` is mapped and analysed, but `fx_rates` and `supplier_master` are kept, because
+currency harmonization and supplier normalization will need them.
 
 Later pipeline stages add their own numbered directory, so the processing order is readable off the
 filesystem and a finished run carries its full audit trail: the source exports, every intermediate
@@ -73,18 +82,23 @@ agents/
     client.py                     # credentials and model, read from the environment
     base.py                       # AgentDefinition + run_agent()
     instructions/
-        schema_mapping.md         # what the agent is told to do
-    schema_mapping.py             # its input assembly and output model
+        workbook_triage.md        # what each agent is told to do
+        schema_mapping.md
+    workbook_triage.py            # each agent's input assembly and output model
+    schema_mapping.py
 ```
 
 Adding an agent means adding an instruction file, an output model and a thin module. The canonical
 schema in `core/canonical.py` is injected into the instructions at runtime, so the field list never
 exists in two places.
 
-The agent proposes; deterministic code decides. `mapping/schema_mapping.py` checks every answer
-against the canonical schema and the file's real columns: an invented column becomes an honest gap
-with a note, unknown fields are dropped, and confidence is clamped. A hallucination cannot reach
-the pipeline.
+The agent proposes; deterministic code decides. Every answer is checked before it counts: an
+invented column or sheet name becomes an honest gap with a note, unknown fields and roles are
+refused, and confidence is clamped. A hallucination cannot reach the pipeline.
+
+The split runs the other way too. A sheet that is not a table is marked as documentation by
+`ingestion/sheet_profile.py` without asking anything — a cover letter is recognisable by shape, and
+the agent is only consulted about tables whose *meaning* is in question.
 
 Only column names, inferred types and at most five truncated sample values per column are sent to
 the model. What was sent is recorded in the run artifact.

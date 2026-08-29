@@ -5,17 +5,25 @@ import streamlit as st
 
 from agents.client import api_key_configured
 from core.config import ALLOWED_EXTENSIONS, PREVIEW_ROWS
-from core.models import ReadOptions
+from core.models import ReadOptions, SheetProfile
 from core.run import create_run
-from ingestion.readers import list_sheets, read_tabular
-from ingestion.storage import StagedUpload, store_uploads
+from ingestion.readers import file_format, file_options, read_tabular
+from ingestion.sheet_profile import best_table_sheet, profile_sheets
+from ingestion.storage import StagedUpload, store_files
 from mapping.schema_mapping import run_schema_mapping
+from triage.workbook_triage import confirm_triage, needs_review, run_workbook_triage
 from ui.sidebar import render_run_sidebar
 
 
 @st.cache_data(show_spinner=False)
 def _parse(data: bytes, filename: str, sheet: str | None) -> tuple[pd.DataFrame, ReadOptions]:
     return read_tabular(data, filename, sheet)
+
+
+@st.cache_data(show_spinner=False)
+def _profiles(data: bytes, filename: str) -> list[SheetProfile]:
+    fmt = file_format(filename)
+    return profile_sheets(data, fmt, file_options(data, fmt))
 
 
 def render() -> None:
@@ -29,8 +37,9 @@ def render() -> None:
         "spend reduction and contract optimization.\n\n"
         "Anything that can be calculated is calculated. Spend figures, aggregations and "
         "quality checks never pass through a language model. AI is used only where "
-        "meaning has to be interpreted, beginning with the step below, which translates "
-        "your export's column names into the canonical procurement schema."
+        "meaning has to be interpreted, beginning with the steps below, which work out "
+        "which sheets hold data and translate their columns into the canonical "
+        "procurement schema."
     )
     st.divider()
 
@@ -62,13 +71,16 @@ def render() -> None:
 def _stage_file(file) -> dict:
     data = file.getvalue()
     with st.expander(file.name, expanded=True):
-        sheet = _sheet_selector(data, file)
         company = st.text_input(
             "Portfolio company (optional)",
             key=f"company_{file.file_id}",
             help="Fallback only. A company column inside the export takes precedence.",
         )
         try:
+            profiles = _profiles(data, file.name)
+            # Preview the sheet that looks like data, not simply the first one: in a
+            # submission workbook the first sheet is usually the cover letter.
+            sheet = best_table_sheet(profiles)
             frame, options = _parse(data, file.name, sheet)
         except Exception as error:
             # Batch upload: one unreadable file must not block the others, so the
@@ -76,66 +88,58 @@ def _stage_file(file) -> dict:
             st.error(f"Could not read this file: {error}")
             return {"file": file}
 
-        st.caption(_describe(frame, options))
+        st.caption(_describe(frame, options, profiles))
         st.dataframe(frame.head(PREVIEW_ROWS), width="stretch")
-        return {
-            "file": file,
-            "data": data,
-            "company": company,
-            "sheet": sheet,
-            "frame": frame,
-        }
+        return {"file": file, "data": data, "company": company, "frame": frame}
 
 
-def _sheet_selector(data: bytes, file) -> str | None:
-    if not file.name.lower().endswith(".xlsx"):
-        return None
-    sheets = list_sheets(data)
-    if len(sheets) < 2:
-        return None
-    return st.selectbox("Sheet", sheets, key=f"sheet_{file.file_id}")
-
-
-def _describe(frame: pd.DataFrame, options: ReadOptions) -> str:
+def _describe(frame: pd.DataFrame, options: ReadOptions, profiles: list[SheetProfile]) -> str:
     parts = [f"{len(frame):,} rows x {len(frame.columns)} columns"]
     if options.delimiter:
         parts.append(f"delimiter {options.delimiter!r}")
     if options.encoding:
         parts.append(f"encoding {options.encoding}")
-    if options.sheet:
-        parts.append(f"sheet {options.sheet}")
+    if len(profiles) > 1:
+        parts.append(f"showing sheet '{options.sheet}' of {len(profiles)}")
     return "  |  ".join(parts)
 
 
 def _start_analysis(staged: list[dict], upload_round: int) -> None:
     if not api_key_configured():
         st.error(
-            "OPENAI_API_KEY is not set, so the schema mapping agent cannot run. "
-            "Copy .env.example to .env and add your key, then restart the app."
+            "OPENAI_API_KEY is not set, so the agents cannot run. Copy .env.example to "
+            ".env and add your key, then restart the app."
         )
         return
 
     run_id = st.session_state.get("run_id") or create_run().run_id
     st.session_state["run_id"] = run_id
-    items = [
-        StagedUpload(item["data"], item["file"].name, item["company"], item["sheet"])
-        for item in staged
-    ]
+    items = [StagedUpload(item["data"], item["file"].name, item["company"]) for item in staged]
 
     try:
         with st.status("Running analysis", expanded=True) as status:
-            st.write(f"Storing {len(items)} dataset(s) in {run_id}")
-            store_uploads(run_id, items)
-            st.write("Mapping columns onto the canonical procurement schema")
-            run_schema_mapping(run_id)
-            status.update(label="Analysis complete", state="complete")
+            st.write(f"Storing {len(items)} file(s) in {run_id}")
+            store_files(run_id, items)
+
+            st.write("Working out which sheets hold data")
+            triage = run_workbook_triage(run_id)
+
+            if needs_review(triage):
+                status.update(label="Sheets identified", state="complete")
+                target = "workbook_review"
+            else:
+                confirm_triage(run_id)
+                st.write("Mapping columns onto the canonical procurement schema")
+                run_schema_mapping(run_id)
+                status.update(label="Analysis complete", state="complete")
+                target = "schema_mapping"
     except Exception as error:
         st.session_state["start_results"] = [("error", f"Analysis failed: {error}")]
         st.rerun()
         return
 
     st.session_state["upload_round"] = upload_round + 1
-    st.session_state["switch_to"] = "schema_mapping"
+    st.session_state["switch_to"] = target
     st.rerun()
 
 

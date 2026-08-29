@@ -6,18 +6,21 @@ locally as it does on Streamlit Cloud.
 """
 
 import os
+from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
 from streamlit.errors import StreamlitSecretNotFoundError
 
-from ui import schema_mapping, start
+from ui import schema_mapping, start, workbook_review
 
 SECRET_KEYS = ("OPENAI_API_KEY", "OPENAI_MODEL", "OPENAI_TIMEOUT")
 
 
 def _load_credentials() -> None:
-    load_dotenv()
+    # Explicit path: the no-argument form finds the file by inspecting the caller's
+    # stack frame, which ties loading to how the process happens to be started.
+    load_dotenv(Path(__file__).parent / ".env")
     missing = [key for key in SECRET_KEYS if not os.getenv(key)]
     if not missing:
         return
@@ -36,6 +39,9 @@ st.set_page_config(page_title="Procurement Lever Intelligence", layout="wide")
 
 PAGES = {
     "start": st.Page(start.render, title="Start", url_path="start", default=True),
+    "workbook_review": st.Page(
+        workbook_review.render, title="Workbook Review", url_path="workbook-review"
+    ),
     "schema_mapping": st.Page(
         schema_mapping.render, title="Schema Mapping", url_path="schema-mapping"
     ),

@@ -22,15 +22,16 @@ from agents.base import run_agent
 from agents.schema_mapping import ProposedMapping, build_input, definition
 from core.canonical import CANONICAL_FIELDS, CANONICAL_KEYS
 from core.models import (
+    Dataset,
     DatasetMapping,
     FieldMapping,
     LlmCall,
     SchemaMappingArtifact,
-    UploadManifest,
 )
 from core.run import get_logger, record_step, step_path
 from ingestion.column_profile import build_column_profiles
-from ingestion.storage import load_dataframe, load_manifests
+from ingestion.storage import load_dataframe
+from triage.workbook_triage import load_datasets
 
 STEP = "schema_mapping"
 ARTIFACT_NAME = "schema_mapping.json"
@@ -38,21 +39,27 @@ CONFIRMED_ARTIFACT_NAME = "schema_mapping_confirmed.json"
 
 
 def run_schema_mapping(run_id: str, *, client=None) -> SchemaMappingArtifact:
-    """Map every ingested export in the run onto the canonical schema."""
+    """Map the run's transaction datasets onto the canonical schema.
+
+    Only datasets triaged as transactions are mapped. An FX table or a supplier
+    list has no canonical procurement schema to be mapped onto, and asking the
+    agent about one would burn a call to be told exactly that.
+    """
     logger = get_logger(run_id)
     target = step_path(run_id, STEP)
     agent = definition()
 
-    datasets = [
-        _map_dataset(run_id, manifest, agent, client, logger)
-        for manifest in load_manifests(run_id)
-    ]
-    artifact = SchemaMappingArtifact(datasets=datasets)
+    transactional = [d for d in load_datasets(run_id) if d.role == "transactions"]
+    if not transactional:
+        logger.warning("schema mapping: no dataset was triaged as transactions")
+
+    mapped = [_map_dataset(run_id, dataset, agent, client, logger) for dataset in transactional]
+    artifact = SchemaMappingArtifact(datasets=mapped)
 
     path = target / ARTIFACT_NAME
     path.write_bytes(artifact.model_dump_json(indent=2).encode("utf-8"))
     record_step(run_id, STEP, [path])
-    logger.info("schema mapping complete: %d dataset(s)", len(datasets))
+    logger.info("schema mapping complete: %d dataset(s)", len(mapped))
     return artifact
 
 
@@ -61,7 +68,7 @@ def confirm_mapping(
 ) -> SchemaMappingArtifact:
     """Persist the user's decisions.
 
-    ``selections`` maps a stored filename to the source column chosen per
+    ``selections`` maps a dataset id to the source column chosen per
     canonical field. Anything that differs from the proposal is marked as decided
     by the user, so the artifact records who is answerable for each field.
     """
@@ -73,7 +80,7 @@ def confirm_mapping(
         dataset.model_copy(
             update={
                 "mappings": [
-                    _apply_choice(mapping, selections.get(dataset.stored_filename, {}))
+                    _apply_choice(mapping, selections.get(dataset.dataset_id, {}))
                     for mapping in dataset.mappings
                 ]
             }
@@ -158,19 +165,19 @@ def reconcile(proposals: list[ProposedMapping], columns: list[str]) -> list[Fiel
 
 
 def _map_dataset(
-    run_id: str, manifest: UploadManifest, agent, client, logger: Logger
+    run_id: str, dataset: Dataset, agent, client, logger: Logger
 ) -> DatasetMapping:
-    frame = load_dataframe(run_id, manifest)
+    frame = load_dataframe(run_id, dataset)
     profiles = build_column_profiles(frame)
     logger.info(
         "mapping %s: %d column(s) sent to the agent",
-        manifest.original_filename,
+        dataset.dataset_id,
         len(profiles),
     )
 
     result = run_agent(
         agent,
-        build_input(profiles, manifest.read_options.sheet),
+        build_input(profiles, dataset.sheet),
         client=client,
         logger=logger,
     )
@@ -179,14 +186,14 @@ def _map_dataset(
     matched = sum(m.source_column is not None for m in mappings)
     logger.info(
         "mapped %s: %d of %d canonical fields matched",
-        manifest.original_filename,
+        dataset.dataset_id,
         matched,
         len(CANONICAL_FIELDS),
     )
     return DatasetMapping(
-        stored_filename=manifest.stored_filename,
-        original_filename=manifest.original_filename,
-        sheet=manifest.read_options.sheet,
+        dataset_id=dataset.dataset_id,
+        original_filename=dataset.original_filename,
+        sheet=dataset.sheet,
         column_profiles=profiles,
         mappings=mappings,
         llm_call=LlmCall(

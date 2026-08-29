@@ -23,9 +23,15 @@ def _isolate_run_loggers():
             logger.handlers.clear()
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def run_root(tmp_path, monkeypatch):
-    """Point run workspaces at a throwaway directory for the duration of a test."""
+    """Point run workspaces at a throwaway directory for the duration of a test.
+
+    Autouse on purpose. Forgetting to request it would silently write test runs
+    into the developer's real runs/ directory, which is exactly what happened
+    once before this became automatic. Tests that need the path still ask for it
+    by name and get this same directory.
+    """
     monkeypatch.setenv("PLI_RUNS_DIR", str(tmp_path))
     return tmp_path
 
@@ -43,6 +49,12 @@ def oracle_csv() -> bytes:
 @pytest.fixture
 def dynamics_xlsx() -> bytes:
     return (FIXTURES / "dynamics_export.xlsx").read_bytes()
+
+
+@pytest.fixture
+def portfolio_xlsx() -> bytes:
+    """A submission workbook: cover letter, instructions, spend data, master, FX."""
+    return (FIXTURES / "portfolio_workbook.xlsx").read_bytes()
 
 
 class FakeResponses:

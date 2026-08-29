@@ -6,7 +6,8 @@ import streamlit as st
 from core.canonical import field_by_key
 from core.config import CONFIDENCE_THRESHOLD, RAW_PREVIEW_ROWS
 from core.models import DatasetMapping, FieldMapping
-from ingestion.storage import load_dataframe, load_manifests
+from ingestion.storage import load_dataframe
+from triage.workbook_triage import load_datasets
 from mapping.schema_mapping import confirm_mapping, has_mapping, load_artifact
 from ui.sidebar import render_run_sidebar
 
@@ -29,12 +30,15 @@ def render() -> None:
         return
 
     artifact = load_artifact(run_id)
+    if not artifact.datasets:
+        st.warning("No sheet was triaged as transactions, so nothing was mapped.")
+        return
     if len(artifact.datasets) == 1:
         _render_dataset(run_id, artifact.datasets[0])
         return
 
     for tab, dataset in zip(
-        st.tabs([dataset.original_filename for dataset in artifact.datasets]),
+        st.tabs([_label(dataset) for dataset in artifact.datasets]),
         artifact.datasets,
     ):
         with tab:
@@ -57,7 +61,7 @@ def _render_dataset(run_id: str, dataset: DatasetMapping) -> None:
                 for mapping in dataset.mappings
             ]
         ),
-        key=f"editor_{dataset.stored_filename}",
+        key=f"editor_{dataset.dataset_id}",
         width="stretch",
         hide_index=True,
         disabled=["Canonical field", "Confidence", "Status", "Comment"],
@@ -73,8 +77,8 @@ def _render_dataset(run_id: str, dataset: DatasetMapping) -> None:
         },
     )
 
-    if st.button("Confirm mapping", type="primary", key=f"confirm_{dataset.stored_filename}"):
-        confirm_mapping(run_id, {dataset.stored_filename: _selections(dataset, edited)})
+    if st.button("Confirm mapping", type="primary", key=f"confirm_{dataset.dataset_id}"):
+        confirm_mapping(run_id, {dataset.dataset_id: _selections(dataset, edited)})
         st.success(f"Mapping confirmed for {dataset.original_filename}.")
 
     st.subheader("Raw data")
@@ -83,6 +87,10 @@ def _render_dataset(run_id: str, dataset: DatasetMapping) -> None:
         caption += f", sheet '{dataset.sheet}'"
     st.caption(caption)
     st.dataframe(_raw_preview(run_id, dataset), width="stretch", hide_index=True)
+
+
+def _label(dataset: DatasetMapping) -> str:
+    return f"{dataset.original_filename} - {dataset.sheet}" if dataset.sheet else dataset.original_filename
 
 
 def _status(mapping: FieldMapping) -> str:
@@ -102,7 +110,5 @@ def _selections(dataset: DatasetMapping, edited: pd.DataFrame) -> dict[str, str 
 
 
 def _raw_preview(run_id: str, dataset: DatasetMapping) -> pd.DataFrame:
-    manifest = next(
-        m for m in load_manifests(run_id) if m.stored_filename == dataset.stored_filename
-    )
-    return load_dataframe(run_id, manifest).head(RAW_PREVIEW_ROWS)
+    source = next(d for d in load_datasets(run_id) if d.dataset_id == dataset.dataset_id)
+    return load_dataframe(run_id, source).head(RAW_PREVIEW_ROWS)

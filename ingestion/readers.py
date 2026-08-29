@@ -47,7 +47,7 @@ def read_tabular(
 ) -> tuple[pd.DataFrame, ReadOptions]:
     """Parse an upload, detecting whatever the format does not state explicitly."""
     fmt = file_format(filename)
-    options = _detect_options(data, fmt, sheet)
+    options = detect_options(data, fmt, sheet)
     return read_with_options(data, fmt, options), options
 
 
@@ -70,7 +70,8 @@ def read_with_options(data: bytes, fmt: FileFormat, options: ReadOptions) -> pd.
     )
 
 
-def _detect_options(data: bytes, fmt: FileFormat, sheet: str | None) -> ReadOptions:
+def detect_options(data: bytes, fmt: FileFormat, sheet: str | None = None) -> ReadOptions:
+    """Work out how to parse this file. For CSV that is encoding and delimiter."""
     if fmt == "csv":
         encoding = _detect_encoding(data)
         return ReadOptions(encoding=encoding, delimiter=_detect_delimiter(data.decode(encoding)))
@@ -79,6 +80,15 @@ def _detect_options(data: bytes, fmt: FileFormat, sheet: str | None) -> ReadOpti
     if sheet is not None and sheet not in sheets:
         raise ValueError(f"sheet {sheet!r} not found; available: {', '.join(sheets)}")
     return ReadOptions(sheet=sheet or sheets[0])
+
+
+def file_options(data: bytes, fmt: FileFormat) -> ReadOptions:
+    """Options that belong to the file rather than to one sheet of it.
+
+    Which sheet to read is decided later by triage, so it is deliberately left
+    unset here.
+    """
+    return ReadOptions() if fmt == "xlsx" else detect_options(data, fmt)
 
 
 def _detect_encoding(data: bytes) -> str:

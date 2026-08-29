@@ -3,7 +3,8 @@ import pytest
 from agents.schema_mapping import ProposedMapping, SchemaMappingProposal
 from core.canonical import CANONICAL_FIELDS
 from core.run import create_run, load_run, step_path
-from ingestion.storage import StagedUpload, store_uploads
+from ingestion.storage import StagedUpload, store_files
+from triage.workbook_triage import confirm_triage, run_workbook_triage
 from mapping.schema_mapping import (
     confirm_mapping,
     has_mapping,
@@ -53,9 +54,16 @@ def _sensible_proposal():
     )
 
 
+def _prepare(run_id, *uploads):
+    """Ingest and triage, so schema mapping has datasets to work on."""
+    store_files(run_id, list(uploads))
+    run_workbook_triage(run_id)
+    confirm_triage(run_id)
+
+
 def _run_with(run_root, sap_csv, proposal):
     run_id = create_run().run_id
-    store_uploads(run_id, [StagedUpload(sap_csv, "sap_export.csv", "Alpha GmbH")])
+    _prepare(run_id, StagedUpload(sap_csv, "sap_export.csv", "Alpha GmbH"))
     artifact = run_schema_mapping(run_id, client=FakeClient(proposal))
     return run_id, artifact
 
@@ -138,7 +146,11 @@ def test_writes_the_artifact_and_records_the_step(run_root, sap_csv):
 
     assert has_mapping(run_id)
     assert (step_path(run_id, "schema_mapping") / "schema_mapping.json").is_file()
-    assert [s.step for s in load_run(run_id).steps] == ["ingestion", "schema_mapping"]
+    assert [s.step for s in load_run(run_id).steps] == [
+        "ingestion",
+        "workbook_triage",
+        "schema_mapping",
+    ]
     assert load_artifact(run_id) == artifact
 
 
@@ -147,6 +159,7 @@ def test_artifact_records_what_was_sent_and_what_it_cost(run_root, sap_csv):
     dataset = artifact.datasets[0]
 
     assert dataset.original_filename == "sap_export.csv"
+    assert dataset.dataset_id == "01_sap_export"
     assert [p.name for p in dataset.column_profiles] == SAP_COLUMNS
     assert dataset.llm_call.model == "gpt-5-mini-test"
     assert dataset.llm_call.input_tokens == 1234
@@ -169,7 +182,7 @@ def test_confirmation_marks_only_what_the_user_changed(run_root, sap_csv):
     selections = {m.canonical_field: m.source_column for m in dataset.mappings}
     selections["category"] = "Account Description"
 
-    confirmed = confirm_mapping(run_id, {dataset.stored_filename: selections})
+    confirmed = confirm_mapping(run_id, {dataset.dataset_id: selections})
 
     mappings = {m.canonical_field: m for m in confirmed.datasets[0].mappings}
     assert mappings["category"].source_column == "Account Description"
@@ -181,25 +194,23 @@ def test_confirmation_marks_only_what_the_user_changed(run_root, sap_csv):
 
 def test_confirming_a_second_dataset_keeps_the_first_one(run_root, sap_csv, oracle_csv):
     run_id = create_run().run_id
-    store_uploads(
+    _prepare(
         run_id,
-        [
-            StagedUpload(sap_csv, "sap_export.csv"),
-            StagedUpload(oracle_csv, "oracle_export.csv"),
-        ],
+        StagedUpload(sap_csv, "sap_export.csv"),
+        StagedUpload(oracle_csv, "oracle_export.csv"),
     )
     artifact = run_schema_mapping(run_id, client=FakeClient(_sensible_proposal()))
     first, second = artifact.datasets
 
-    confirm_mapping(run_id, {first.stored_filename: {"category": "Account Description"}})
-    confirm_mapping(run_id, {second.stored_filename: {"company": "Operating Unit"}})
+    confirm_mapping(run_id, {first.dataset_id: {"category": "Account Description"}})
+    confirm_mapping(run_id, {second.dataset_id: {"company": "Operating Unit"}})
 
-    confirmed = {d.stored_filename: d for d in load_confirmed(run_id).datasets}
+    confirmed = {d.dataset_id: d for d in load_confirmed(run_id).datasets}
     first_category = next(
-        m for m in confirmed[first.stored_filename].mappings if m.canonical_field == "category"
+        m for m in confirmed[first.dataset_id].mappings if m.canonical_field == "category"
     )
     second_company = next(
-        m for m in confirmed[second.stored_filename].mappings if m.canonical_field == "company"
+        m for m in confirmed[second.dataset_id].mappings if m.canonical_field == "company"
     )
     assert first_category.decided_by == "user"
     assert second_company.decided_by == "user"
