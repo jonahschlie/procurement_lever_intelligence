@@ -1,4 +1,4 @@
-"""The schema mapping agent (SYSTEMCONCEPT section 4).
+"""The schema mapping agent (SYSTEMCONCEPT section 7).
 
 The instruction file carries the stable guidance; the canonical field list is
 appended at runtime from core.canonical so there is never a second copy of the

@@ -3,13 +3,13 @@
 Up to here the mapping is a description. This step applies it once and
 materialises the result, so that from now on the pipeline reads canonical column
 names and nothing has to re-derive them -- the point at which SYSTEMCONCEPT
-section 5 says the pipeline becomes ERP-independent.
+section 8 says the pipeline becomes ERP-independent.
 
 Two things this step deliberately does not do:
 
 Values are renamed, never converted. ``1.250,00`` stays the string ``1.250,00``.
 Typing, normalization and currency conversion belong to the rule engine
-(section 7) and section 9; doing any of it here would reinterpret data before the
+(section 11) and section 13; doing any of it here would reinterpret data before the
 deterministic rules have had their say.
 
 The schema is complete even where nothing was mapped. All canonical columns

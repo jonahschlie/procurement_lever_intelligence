@@ -6,7 +6,7 @@ as documentation without consulting the agent at all -- a cover letter is not a
 judgement call.
 
 Sheets keep their role rather than being thrown away. An FX table is what section
-9 needs for currency harmonization and a supplier list is what section 7 needs
+13 needs for currency harmonization and a supplier list is what section 11 needs
 for normalization; discarding them here would only mean asking for them again.
 
 Artifacts in ``02_workbook_triage/``:

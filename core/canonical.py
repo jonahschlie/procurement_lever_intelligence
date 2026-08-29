@@ -1,4 +1,4 @@
-"""The canonical procurement schema (SYSTEMCONCEPT section 5).
+"""The canonical procurement schema (SYSTEMCONCEPT section 8).
 
 Every ERP export is translated into these fields; from there on the pipeline is
 ERP-independent. This module is the single source of truth -- the field list

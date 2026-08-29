@@ -9,7 +9,7 @@ belongs to no single step -- it is the run's evolving state. Each step still
 writes its own report into its own directory.
 
 The table is overwritten in place. Rows are never removed from it (SYSTEMCONCEPT
-section 8), so a rewrite only ever adds columns; the revision history in the
+section 12), so a rewrite only ever adds columns; the revision history in the
 metadata records what each step changed, which is what in-place writing would
 otherwise cost.
 """

@@ -1,6 +1,6 @@
 """Column profiles: the input the schema mapping agent reasons over.
 
-SYSTEMCONCEPT section 4 defines that input as column names, data types and sample
+SYSTEMCONCEPT section 7 defines that input as column names, data types and sample
 values. Types are inferred here for description only -- the frame itself stays
 text, so nothing reaching the rule engine has been reinterpreted.
 
