@@ -14,8 +14,9 @@ from core.canonical import CANONICAL_FIELDS
 from core.config import RAW_PREVIEW_ROWS
 from core.run import create_run
 from ingestion.storage import StagedUpload, store_files
-from mapping.schema_mapping import run_schema_mapping
+from mapping.schema_mapping import confirm_mapping, run_schema_mapping
 from tests.conftest import FakeClient
+from transform.canonical_table import build_canonical_table
 from triage.workbook_triage import confirm_triage, run_workbook_triage
 
 APP_PATH = str(Path(__file__).parent.parent / "app.py")
@@ -69,7 +70,8 @@ def test_start_page_greets_and_explains(run_root):
     assert not app.exception
     assert app.title[0].value == "Procurement Lever Intelligence"
     assert "value creation" in " ".join(block.value for block in app.markdown)
-    assert any("No run started yet" in caption.value for caption in app.sidebar.caption)
+    # The run block is gone: the sidebar is controls only.
+    assert not app.sidebar.code
 
 
 def test_start_page_keeps_the_controls_in_the_sidebar(run_root):
@@ -127,7 +129,7 @@ def test_review_page_lists_every_sheet_with_its_role(run_root, portfolio_xlsx):
     assert table.loc[2, "Rows"] == 6
 
 
-def test_mapping_page_shows_the_table_and_the_raw_rows(run_root, portfolio_xlsx):
+def _mapped_run(portfolio_xlsx):
     run_id = _triaged_run(portfolio_xlsx)
     confirm_triage(run_id)
     run_schema_mapping(
@@ -151,6 +153,11 @@ def test_mapping_page_shows_the_table_and_the_raw_rows(run_root, portfolio_xlsx)
             )
         ),
     )
+    return run_id
+
+
+def test_mapping_page_shows_the_table_and_the_raw_rows(run_root, portfolio_xlsx):
+    run_id = _mapped_run(portfolio_xlsx)
 
     app = _page("schema_mapping", run_id=run_id)
 
@@ -175,13 +182,44 @@ def test_mapping_page_shows_the_table_and_the_raw_rows(run_root, portfolio_xlsx)
     assert raw.loc[0, "Name of Supplier"] == "Atlas Freight AB"
 
 
+def test_mapping_page_offers_one_confirm_button(run_root, portfolio_xlsx):
+    run_id = _mapped_run(portfolio_xlsx)
+
+    app = _page("schema_mapping", run_id=run_id)
+
+    assert not app.exception
+    assert [button.label for button in app.button] == ["Confirm mapping and continue"]
+
+
+def test_canonical_table_page_is_empty_without_a_table(run_root):
+    app = _page("canonical_table")
+
+    assert not app.exception
+    assert app.title[0].value == "Canonical Table"
+    assert "No canonical table yet" in app.info[0].value
+
+
+def test_canonical_table_page_reports_what_was_built(run_root, portfolio_xlsx):
+    run_id = _mapped_run(portfolio_xlsx)
+    confirm_mapping(run_id, {})
+    build_canonical_table(run_id)
+
+    app = _page("canonical_table", run_id=run_id)
+
+    assert not app.exception
+    assert [metric.value for metric in app.metric] == ["5", "21", "1"]
+
+    contributions, preview = (element.value for element in app.dataframe)
+    assert contributions.loc[0, "Company"] == "Northwind Holding"
+    assert contributions.loc[0, "Rows"] == 5
+    assert preview.loc[0, "supplier"] == "Atlas Freight AB"
+    # Nothing was mapped to company here, so the name given at upload fills in.
+    assert preview.loc[0, "company"] == "Northwind Holding"
+    assert preview.loc[0, "company_source"] == "upload_label"
+
+
 def test_mapping_tab_is_named_after_the_company(run_root, portfolio_xlsx):
-    run_id = _triaged_run(portfolio_xlsx)
-    confirm_triage(run_id)
-    run_schema_mapping(
-        run_id,
-        client=FakeClient(SchemaMappingProposal(mappings=[])),
-    )
+    run_id = _mapped_run(portfolio_xlsx)
 
     app = _page("schema_mapping", run_id=run_id)
 

@@ -7,16 +7,14 @@ from core.canonical import field_by_key
 from core.config import CONFIDENCE_THRESHOLD, RAW_PREVIEW_ROWS
 from core.models import DatasetMapping, FieldMapping
 from ingestion.storage import load_dataframe
-from triage.workbook_triage import load_datasets
 from mapping.schema_mapping import confirm_mapping, has_mapping, load_artifact
-from ui.sidebar import render_run_sidebar
+from transform.canonical_table import build_canonical_table
+from triage.workbook_triage import load_datasets
 
 UNMAPPED = "-- not mapped --"
 
 
 def render() -> None:
-    render_run_sidebar()
-
     st.title("Schema Mapping")
     st.markdown(
         "The agent read each export's column names, types and a few sample values, and "
@@ -33,19 +31,23 @@ def render() -> None:
     if not artifact.datasets:
         st.warning("No sheet was triaged as transactions, so nothing was mapped.")
         return
+
     if len(artifact.datasets) == 1:
-        _render_dataset(run_id, artifact.datasets[0])
-        return
+        edits = {artifact.datasets[0].dataset_id: _render_dataset(run_id, artifact.datasets[0])}
+    else:
+        edits = {}
+        for tab, dataset in zip(
+            st.tabs([_label(dataset) for dataset in artifact.datasets]), artifact.datasets
+        ):
+            with tab:
+                edits[dataset.dataset_id] = _render_dataset(run_id, dataset)
 
-    for tab, dataset in zip(
-        st.tabs([_label(dataset) for dataset in artifact.datasets]),
-        artifact.datasets,
-    ):
-        with tab:
-            _render_dataset(run_id, dataset)
+    st.divider()
+    if st.button("Confirm mapping and continue", type="primary"):
+        _confirm(run_id, artifact.datasets, edits)
 
 
-def _render_dataset(run_id: str, dataset: DatasetMapping) -> None:
+def _render_dataset(run_id: str, dataset: DatasetMapping) -> pd.DataFrame:
     source_columns = [profile.name for profile in dataset.column_profiles]
 
     edited = st.data_editor(
@@ -77,16 +79,29 @@ def _render_dataset(run_id: str, dataset: DatasetMapping) -> None:
         },
     )
 
-    if st.button("Confirm mapping", type="primary", key=f"confirm_{dataset.dataset_id}"):
-        confirm_mapping(run_id, {dataset.dataset_id: _selections(dataset, edited)})
-        st.success(f"Mapping confirmed for {dataset.original_filename}.")
-
     st.subheader("Raw data")
     caption = f"First {RAW_PREVIEW_ROWS} rows of {dataset.original_filename}"
     if dataset.sheet:
         caption += f", sheet '{dataset.sheet}'"
     st.caption(caption)
     st.dataframe(_raw_preview(run_id, dataset), width="stretch", hide_index=True)
+    return edited
+
+
+def _confirm(run_id: str, datasets: list[DatasetMapping], edits: dict[str, pd.DataFrame]) -> None:
+    selections = {
+        dataset.dataset_id: _selections(dataset, edits[dataset.dataset_id])
+        for dataset in datasets
+    }
+    with st.status("Building the canonical table", expanded=True) as status:
+        st.write("Confirming the mapping")
+        confirm_mapping(run_id, selections)
+        st.write("Applying it to the data")
+        report = build_canonical_table(run_id)
+        status.update(label=f"Canonical table built: {report.row_count:,} rows", state="complete")
+
+    st.session_state["switch_to"] = "canonical_table"
+    st.rerun()
 
 
 def _label(dataset: DatasetMapping) -> str:
@@ -103,10 +118,9 @@ def _status(mapping: FieldMapping) -> str:
 
 
 def _selections(dataset: DatasetMapping, edited: pd.DataFrame) -> dict[str, str | None]:
-    chosen = list(edited["Source column"])
     return {
         mapping.canonical_field: (None if value == UNMAPPED else value)
-        for mapping, value in zip(dataset.mappings, chosen)
+        for mapping, value in zip(dataset.mappings, edited["Source column"])
     }
 
 

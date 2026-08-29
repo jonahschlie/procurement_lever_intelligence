@@ -12,7 +12,6 @@ from triage.workbook_triage import (
     load_confirmed_triage,
     load_triage,
 )
-from ui.sidebar import render_run_sidebar
 
 ROLE_HELP = {
     "transactions": "The spend data itself. This is what gets mapped and analysed.",
@@ -24,8 +23,6 @@ ROLE_HELP = {
 
 
 def render() -> None:
-    render_run_sidebar()
-
     st.title("Workbook Review")
     st.markdown(
         "Submission workbooks usually hold more than a table: a cover letter, filling "

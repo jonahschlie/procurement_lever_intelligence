@@ -147,6 +147,45 @@ class SchemaMappingArtifact(BaseModel):
     datasets: list[DatasetMapping]
 
 
+class TableRevision(BaseModel):
+    """One step's effect on the working table."""
+
+    step: str
+    written_at: datetime
+    row_count: int
+    columns_added: list[str]
+    note: str
+
+
+class TableMeta(BaseModel):
+    """State of the working table, plus how it got there.
+
+    The table is overwritten in place, so this history is what still answers which
+    step touched it and what it changed.
+    """
+
+    row_count: int
+    column_names: list[str]
+    revisions: list[TableRevision] = []
+
+
+class DatasetContribution(BaseModel):
+    dataset_id: str
+    original_filename: str
+    company_label: str | None
+    sheet: str | None
+    row_count: int
+    mapped_fields: list[str]
+    unmapped_fields: list[str]
+    company_source_counts: dict[str, int]
+
+
+class CanonicalTableReport(BaseModel):
+    row_count: int
+    column_names: list[str]
+    contributions: list[DatasetContribution]
+
+
 class StepRecord(BaseModel):
     step: str
     completed_at: datetime

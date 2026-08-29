@@ -13,6 +13,8 @@ Implemented so far:
    table; an agent decides whether a table holds transactions, FX rates or a supplier list.
 3. **Schema mapping** — an agent maps the transaction columns onto the canonical procurement schema
    with a confidence score and a comment; the user reviews and corrects both steps in the UI.
+4. **Canonical table** — the confirmed mapping is applied and every dataset is stacked into one
+   portfolio-wide working table.
 
 Data profiling, the rule engine and the spend cube follow.
 
@@ -42,8 +44,10 @@ upload is stored and holds everything that run produced:
 
 ```
 runs/run_20260829_233045/
-    run.json              # which step completed when, and what it wrote
-    logs/run.log          # every step, chronologically
+    run.json                # which step completed when, and what it wrote
+    canonical_table.parquet # the working table, carried forward by every later step
+    canonical_table.json    # its shape, and what each step changed about it
+    logs/run.log            # every step, chronologically
     01_ingestion/
         01_helios.xlsx    # the original bytes, unmodified
         ingestion.json    # per-file manifest: hash, parse options, sheet names
@@ -53,6 +57,8 @@ runs/run_20260829_233045/
     03_schema_mapping/
         schema_mapping.json            # what the agent proposed, and what it cost
         schema_mapping_confirmed.json  # what the user confirmed
+    04_canonical_table/
+        canonicalization.json          # what each dataset contributed
 ```
 
 A file is not a dataset. A submission workbook holds a cover letter, instructions, the spend data
@@ -67,9 +73,25 @@ artifact, and the log of how they were produced.
 The base directory is `./runs` and can be redirected with the `PLI_RUNS_DIR` environment variable.
 Runs are gitignored -- client data never enters the repository.
 
-Values are read as text throughout ingestion. Type inference belongs to the deterministic rule
-engine; applying it earlier would strip leading zeros from supplier IDs and misread German decimal
-formats.
+Values are read as text throughout ingestion and canonicalization. Type inference belongs to the
+deterministic rule engine; applying it earlier would strip leading zeros from supplier IDs and
+misread German decimal formats.
+
+## The working table
+
+From canonicalization onwards the pipeline works on one table in the canonical schema, at the run
+root rather than inside a step directory — it belongs to no single step, it is the run's state.
+Later steps add quality flags to it rather than writing tables of their own, so each step finds the
+current version in one place.
+
+Rows are never removed from it (SYSTEMCONCEPT section 8): eligibility for an analysis is expressed
+through flag columns, which is what keeps the totals reconcilable against the source. A rewrite
+therefore only ever adds columns, and `canonical_table.json` records what each step changed.
+
+Alongside the 15 canonical fields the table carries where each row came from — `dataset_id`,
+`source_file`, `source_sheet`, `source_row`, `company_label` — so any figure can be traced back to a
+line in the original export. `company_source` records whether the company name came from a column in
+the data, from the name given at upload, or is genuinely missing.
 
 ## Agents
 

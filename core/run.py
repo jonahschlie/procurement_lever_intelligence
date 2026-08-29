@@ -22,7 +22,12 @@ from core.models import RunManifest, StepRecord
 
 # Pipeline order per SYSTEMCONCEPT; the position drives each step's directory prefix.
 # Later stages are appended here as they are built.
-PIPELINE_STEPS = ("ingestion", "workbook_triage", "schema_mapping")
+PIPELINE_STEPS = (
+    "ingestion",
+    "workbook_triage",
+    "schema_mapping",
+    "canonical_table",
+)
 
 RUN_MANIFEST_NAME = "run.json"
 LOG_DIR_NAME = "logs"

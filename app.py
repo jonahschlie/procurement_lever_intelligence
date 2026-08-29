@@ -12,7 +12,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from streamlit.errors import StreamlitSecretNotFoundError
 
-from ui import schema_mapping, start, workbook_review
+from ui import canonical_table, schema_mapping, start, workbook_review
 
 SECRET_KEYS = ("OPENAI_API_KEY", "OPENAI_MODEL", "OPENAI_TIMEOUT")
 
@@ -44,6 +44,9 @@ PAGES = {
     ),
     "schema_mapping": st.Page(
         schema_mapping.render, title="Schema Mapping", url_path="schema-mapping"
+    ),
+    "canonical_table": st.Page(
+        canonical_table.render, title="Canonical Table", url_path="canonical-table"
     ),
 }
 

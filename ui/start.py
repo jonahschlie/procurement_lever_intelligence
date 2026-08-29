@@ -14,7 +14,6 @@ from core.run import create_run
 from ingestion.readers import file_format, file_options, list_sheets
 from ingestion.storage import StagedUpload, store_files
 from triage.workbook_triage import run_workbook_triage
-from ui.sidebar import render_run_sidebar
 
 
 @st.cache_data(show_spinner=False)
@@ -80,9 +79,7 @@ def _render_sidebar() -> list[dict]:
             _start_analysis(staged, upload_round)
 
         _render_start_results()
-        st.divider()
 
-    render_run_sidebar()
     return staged
 
 
@@ -111,7 +108,10 @@ def _start_analysis(staged: list[dict], upload_round: int) -> None:
         )
         return
 
-    run_id = st.session_state.get("run_id") or create_run().run_id
+    # A new run per analysis. Reusing one would overwrite the ingestion artifact
+    # while the triage and mapping artifacts of the previous attempt stayed behind,
+    # leaving the run describing two different things at once.
+    run_id = create_run().run_id
     st.session_state["run_id"] = run_id
     items = [StagedUpload(item["data"], item["filename"], item["company"]) for item in staged]
 
