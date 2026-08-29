@@ -1,4 +1,4 @@
-"""Persisted metadata describing an uploaded ERP export."""
+"""Metadata persisted inside a run workspace."""
 
 from datetime import datetime
 from typing import Literal
@@ -21,14 +21,28 @@ class ReadOptions(BaseModel):
 
 
 class UploadManifest(BaseModel):
-    upload_id: str
+    """One ERP export as ingested into a run."""
+
     original_filename: str
     stored_filename: str
     content_hash: str
     size_bytes: int
-    uploaded_at: datetime
     company_label: str | None
     file_format: FileFormat
     read_options: ReadOptions
     row_count: int
     column_names: list[str]
+
+
+class StepRecord(BaseModel):
+    step: str
+    completed_at: datetime
+    artifacts: list[str]
+
+
+class RunManifest(BaseModel):
+    """Audit trail of a single run: when it started and what each step produced."""
+
+    run_id: str
+    created_at: datetime
+    steps: list[StepRecord] = []

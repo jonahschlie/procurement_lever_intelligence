@@ -1,12 +1,13 @@
-"""Upload screen: stage ERP exports, preview them, then persist them."""
+"""Upload screen: stage ERP exports, preview them, then store them into a run."""
 
 import pandas as pd
 import streamlit as st
 
 from core.config import ALLOWED_EXTENSIONS, PREVIEW_ROWS
 from core.models import ReadOptions
+from core.run import create_run, run_path, step_dir_name
 from ingestion.readers import list_sheets, read_tabular
-from ingestion.storage import delete_upload, list_uploads, save_upload
+from ingestion.storage import STEP, StagedUpload, store_uploads
 
 
 @st.cache_data(show_spinner=False)
@@ -15,6 +16,8 @@ def _parse(data: bytes, filename: str, sheet: str | None) -> tuple[pd.DataFrame,
 
 
 def render() -> None:
+    _render_sidebar()
+
     st.title("Data Upload")
     st.caption(
         "Upload one ERP export per portfolio company. Files are stored unchanged and every "
@@ -37,8 +40,20 @@ def render() -> None:
         if st.button("Store datasets", type="primary", disabled=not readable):
             _store(readable, upload_round)
 
-    st.divider()
-    _render_stored_uploads()
+
+def _render_sidebar() -> None:
+    with st.sidebar:
+        st.subheader("Current run")
+        run_id = st.session_state.get("run_id")
+        if run_id is None:
+            st.caption("No run started yet. Storing the first upload creates one.")
+            return
+
+        st.code(run_id, language=None)
+        st.caption(f"Artifacts and logs: {run_path(run_id)}")
+        if st.button("New run"):
+            del st.session_state["run_id"]
+            st.rerun()
 
 
 def _stage_file(file) -> dict:
@@ -90,24 +105,24 @@ def _describe(frame: pd.DataFrame, options: ReadOptions) -> str:
 
 
 def _store(staged: list[dict], upload_round: int) -> None:
-    results = []
-    for item in staged:
-        name = item["file"].name
-        try:
-            manifest, duplicate = save_upload(
-                item["data"], name, item["company"], item["sheet"]
-            )
-        except Exception as error:
-            results.append(("error", f"{name}: {error}"))
-            continue
-        if duplicate:
-            results.append(
-                ("warning", f"{name} is identical to an existing dataset ({manifest.upload_id})")
-            )
-        else:
-            results.append(("success", f"{name} stored as {manifest.upload_id}"))
+    run_id = st.session_state.get("run_id") or create_run().run_id
+    st.session_state["run_id"] = run_id
 
-    st.session_state["store_results"] = results
+    items = [
+        StagedUpload(item["data"], item["file"].name, item["company"], item["sheet"])
+        for item in staged
+    ]
+    try:
+        manifests = store_uploads(run_id, items)
+    except Exception as error:
+        st.session_state["store_results"] = [("error", f"Could not store datasets: {error}")]
+    else:
+        step = step_dir_name(STEP)
+        st.session_state["store_results"] = [
+            ("success", f"{m.original_filename} -> {run_id}/{step}/{m.stored_filename}")
+            for m in manifests
+        ]
+
     st.session_state["upload_round"] = upload_round + 1
     st.rerun()
 
@@ -115,34 +130,3 @@ def _store(staged: list[dict], upload_round: int) -> None:
 def _render_store_results() -> None:
     for level, message in st.session_state.pop("store_results", []):
         getattr(st, level)(message)
-
-
-def _render_stored_uploads() -> None:
-    st.subheader("Stored datasets")
-    manifests = list_uploads()
-    if not manifests:
-        st.info("No datasets stored yet.")
-        return
-
-    st.dataframe(
-        pd.DataFrame(
-            [
-                {
-                    "Upload ID": m.upload_id,
-                    "Company": m.company_label or "-",
-                    "File": m.original_filename,
-                    "Rows": m.row_count,
-                    "Columns": len(m.column_names),
-                    "Uploaded": m.uploaded_at.strftime("%Y-%m-%d %H:%M UTC"),
-                }
-                for m in manifests
-            ]
-        ),
-        width="stretch",
-        hide_index=True,
-    )
-
-    selected = st.selectbox("Select a dataset to delete", [m.upload_id for m in manifests])
-    if st.button("Delete dataset"):
-        delete_upload(selected)
-        st.rerun()

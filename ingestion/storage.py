@@ -1,108 +1,86 @@
-"""Persist uploaded ERP exports byte-identically together with their metadata.
+"""Ingestion step: store uploaded ERP exports inside a run workspace.
 
-Layout per upload::
-
-    data/uploads/<upload_id>/
-        source.csv | source.xlsx   # untouched original bytes
-        manifest.json              # UploadManifest
-
-Keeping the original bytes plus a content hash is what makes the downstream
-pipeline auditable: every derived figure can be traced back to the exact export
-it came from.
+Original bytes are written untouched next to a manifest recording how each file
+was parsed. Together with the content hash this is what lets any downstream
+figure be traced back to the exact export it came from.
 """
 
 import hashlib
-import shutil
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from logging import Logger
 from pathlib import Path
 
 import pandas as pd
+from pydantic import TypeAdapter
 
-from core.config import uploads_dir
 from core.models import UploadManifest
+from core.run import get_logger, record_step, step_path
 from ingestion.readers import file_format, read_tabular, read_with_options
 
-MANIFEST_NAME = "manifest.json"
+STEP = "ingestion"
+ARTIFACT_NAME = "ingestion.json"
+
+_MANIFESTS = TypeAdapter(list[UploadManifest])
 
 
-def save_upload(
-    data: bytes,
-    filename: str,
-    company_label: str | None = None,
-    sheet: str | None = None,
-) -> tuple[UploadManifest, bool]:
-    """Store a file and its manifest.
+@dataclass(frozen=True)
+class StagedUpload:
+    data: bytes
+    filename: str
+    company_label: str | None = None
+    sheet: str | None = None
 
-    Returns the manifest and whether the content was already present. Identical
-    content is never stored twice -- the existing manifest is returned instead.
-    """
-    content_hash = hashlib.sha256(data).hexdigest()
-    duplicate = _find_by_hash(content_hash)
-    if duplicate is not None:
-        return duplicate, True
 
-    fmt = file_format(filename)
-    frame, read_options = read_tabular(data, filename, sheet)
-    uploaded_at = datetime.now(timezone.utc)
-    upload_id = f"{uploaded_at:%Y%m%dT%H%M%S}-{content_hash[:8]}"
-    stored_filename = f"source.{fmt}"
+def store_uploads(run_id: str, items: list[StagedUpload]) -> list[UploadManifest]:
+    """Write every staged export plus the step artifact into the run."""
+    target = step_path(run_id, STEP)
+    logger = get_logger(run_id)
+
+    manifests = [
+        _store_one(target, index, item, logger) for index, item in enumerate(items, start=1)
+    ]
+
+    artifact = target / ARTIFACT_NAME
+    artifact.write_bytes(_MANIFESTS.dump_json(manifests, indent=2))
+    record_step(run_id, STEP, [target / m.stored_filename for m in manifests] + [artifact])
+    logger.info("ingestion complete: %d file(s)", len(manifests))
+    return manifests
+
+
+def load_manifests(run_id: str) -> list[UploadManifest]:
+    artifact = step_path(run_id, STEP) / ARTIFACT_NAME
+    return _MANIFESTS.validate_json(artifact.read_bytes())
+
+
+def load_dataframe(run_id: str, manifest: UploadManifest) -> pd.DataFrame:
+    """Re-read a stored export using the options recorded when it was ingested."""
+    data = (step_path(run_id, STEP) / manifest.stored_filename).read_bytes()
+    return read_with_options(data, manifest.file_format, manifest.read_options)
+
+
+def _store_one(target: Path, index: int, item: StagedUpload, logger: Logger) -> UploadManifest:
+    frame, read_options = read_tabular(item.data, item.filename, item.sheet)
+    # The running prefix keeps identically named exports from overwriting each other.
+    name = Path(item.filename).name
+    stored_filename = f"{index:02d}_{name}"
+    (target / stored_filename).write_bytes(item.data)
 
     manifest = UploadManifest(
-        upload_id=upload_id,
-        original_filename=filename,
+        original_filename=name,
         stored_filename=stored_filename,
-        content_hash=content_hash,
-        size_bytes=len(data),
-        uploaded_at=uploaded_at,
-        company_label=company_label or None,
-        file_format=fmt,
+        content_hash=hashlib.sha256(item.data).hexdigest(),
+        size_bytes=len(item.data),
+        company_label=item.company_label or None,
+        file_format=file_format(item.filename),
         read_options=read_options,
         row_count=len(frame),
         column_names=list(frame.columns),
     )
-
-    target = uploads_dir() / upload_id
-    target.mkdir(parents=True, exist_ok=True)
-    (target / stored_filename).write_bytes(data)
-    (target / MANIFEST_NAME).write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
-    return manifest, False
-
-
-def list_uploads() -> list[UploadManifest]:
-    """All stored uploads, newest first."""
-    root = uploads_dir()
-    if not root.is_dir():
-        return []
-    manifests = [
-        UploadManifest.model_validate_json(path.read_text(encoding="utf-8"))
-        for path in root.glob(f"*/{MANIFEST_NAME}")
-    ]
-    # uploaded_at rather than upload_id: the id carries only second precision.
-    return sorted(manifests, key=lambda manifest: manifest.uploaded_at, reverse=True)
-
-
-def load_manifest(upload_id: str) -> UploadManifest:
-    path = _upload_path(upload_id) / MANIFEST_NAME
-    return UploadManifest.model_validate_json(path.read_text(encoding="utf-8"))
-
-
-def load_dataframe(upload_id: str) -> pd.DataFrame:
-    """Re-read a stored upload using the options recorded at upload time."""
-    manifest = load_manifest(upload_id)
-    data = (_upload_path(upload_id) / manifest.stored_filename).read_bytes()
-    return read_with_options(data, manifest.file_format, manifest.read_options)
-
-
-def delete_upload(upload_id: str) -> None:
-    shutil.rmtree(_upload_path(upload_id))
-
-
-def _upload_path(upload_id: str) -> Path:
-    path = uploads_dir() / upload_id
-    if not path.is_dir():
-        raise FileNotFoundError(f"unknown upload {upload_id!r}")
-    return path
-
-
-def _find_by_hash(content_hash: str) -> UploadManifest | None:
-    return next((m for m in list_uploads() if m.content_hash == content_hash), None)
+    logger.info(
+        "stored %s as %s (%d rows, %d columns)",
+        name,
+        stored_filename,
+        manifest.row_count,
+        len(manifest.column_names),
+    )
+    return manifest

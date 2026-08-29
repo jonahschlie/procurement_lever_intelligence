@@ -25,26 +25,36 @@ uv run streamlit run app.py    # http://localhost:8501
 uv run pytest
 ```
 
-## Storage
+## Run workspaces
 
-Uploads are written to `data/uploads/<upload_id>/`, one directory per dataset:
+Each execution of the pipeline gets its own directory under `runs/`. It is created when the first
+upload is stored and holds everything that run produced:
 
-| File | Content |
-|---|---|
-| `source.csv` / `source.xlsx` | the original bytes, unmodified |
-| `manifest.json` | file metadata plus the exact options used to parse it |
+```
+runs/run_20260829_233045/
+    run.json              # which step completed when, and what it wrote
+    logs/run.log          # every step, chronologically
+    01_ingestion/
+        01_sap_export.csv # the original bytes, unmodified
+        02_oracle_export.csv
+        ingestion.json    # per-file manifest: hash, parse options, shape
+```
 
-The base directory is `./data` and can be redirected with the `PLI_DATA_DIR` environment
-variable. Uploaded exports are gitignored — client data never enters the repository.
+Later pipeline stages add their own numbered directory, so the processing order is readable off the
+filesystem and a finished run carries its full audit trail: the source exports, every intermediate
+artifact, and the log of how they were produced.
+
+The base directory is `./runs` and can be redirected with the `PLI_RUNS_DIR` environment variable.
+Runs are gitignored -- client data never enters the repository.
 
 Values are read as text throughout ingestion. Type inference belongs to the deterministic rule
-engine; applying it earlier would strip leading zeros from supplier IDs and misread German
-decimal formats.
+engine; applying it earlier would strip leading zeros from supplier IDs and misread German decimal
+formats.
 
 ## Deployment
 
 Deployed on Streamlit Community Cloud from `app.py`, with dependencies from `requirements.txt`
 (regenerate with `uv export --no-hashes --no-dev --no-emit-project -o requirements.txt`).
 
-Note that the Community Cloud filesystem is ephemeral: stored uploads do not survive a reboot
-or redeploy. Set `PLI_DATA_DIR` to a persistent volume for durable storage.
+Note that the Community Cloud filesystem is ephemeral: run workspaces do not survive a reboot or
+redeploy. Set `PLI_RUNS_DIR` to a persistent volume for durable storage.

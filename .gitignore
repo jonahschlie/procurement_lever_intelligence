@@ -41,5 +41,5 @@ credentials.json
 ~$*.docx
 *.tmp
 
-# Uploaded ERP exports stay local -- client data is never committed.
-data/
+# Run workspaces hold uploaded ERP exports, artifacts and logs -- never committed.
+runs/
