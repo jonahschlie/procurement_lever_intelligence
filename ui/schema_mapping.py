@@ -105,8 +105,9 @@ def _confirm(run_id: str, datasets: list[DatasetMapping], edits: dict[str, pd.Da
 
 
 def _label(dataset: DatasetMapping) -> str:
-    name = dataset.company_label or dataset.original_filename
-    return f"{name} - {dataset.sheet}" if dataset.sheet else name
+    if dataset.sheet:
+        return f"{dataset.original_filename} - {dataset.sheet}"
+    return dataset.original_filename
 
 
 def _status(mapping: FieldMapping) -> str:

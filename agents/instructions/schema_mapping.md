@@ -51,5 +51,8 @@ One entry per canonical field listed below, with:
   bought, such as `IT Services` or `Logistics`. If an export has only one such column
   and it reads like accounting, map it to `gl_description` and leave `category` empty.
   Do not map the same column to both.
+- **Company code versus company name** — exports often carry both, such as `1101` and
+  `Helios Polska`. The code belongs in `company`, the readable name in `company_name`. If
+  there is only one company column, map it to `company` whichever form it takes.
 - **Supplier name versus supplier id** — the name is text, the id is a code and is
   frequently zero-padded. Zero padding means it is an identifier, not a number.

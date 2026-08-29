@@ -193,7 +193,6 @@ def _map_dataset(
     return DatasetMapping(
         dataset_id=dataset.dataset_id,
         original_filename=dataset.original_filename,
-        company_label=dataset.company_label,
         sheet=dataset.sheet,
         column_profiles=profiles,
         mappings=mappings,

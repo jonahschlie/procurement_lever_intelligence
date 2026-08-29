@@ -63,7 +63,7 @@ def _prepare(run_id, *uploads):
 
 def _run_with(run_root, sap_csv, proposal):
     run_id = create_run().run_id
-    _prepare(run_id, StagedUpload(sap_csv, "sap_export.csv", "Alpha GmbH"))
+    _prepare(run_id, StagedUpload(sap_csv, "sap_export.csv"))
     artifact = run_schema_mapping(run_id, client=FakeClient(proposal))
     return run_id, artifact
 
@@ -172,7 +172,7 @@ def test_log_reports_the_mapping(run_root, sap_csv):
 
     log = (run_path(run_id) / "logs" / "run.log").read_text(encoding="utf-8")
     assert "8 column(s) sent to the agent" in log
-    assert "8 of 15 canonical fields matched" in log
+    assert "8 of 16 canonical fields matched" in log
     assert log.count("schema mapping complete: 1 dataset(s)") == 1
 
 

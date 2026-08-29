@@ -20,7 +20,7 @@ def test_stores_files_with_a_running_prefix(run_root, sap_csv, oracle_csv):
     manifests = store_files(
         run_id,
         [
-            StagedUpload(sap_csv, "sap_export.csv", "Alpha GmbH"),
+            StagedUpload(sap_csv, "sap_export.csv"),
             StagedUpload(oracle_csv, "oracle_export.csv"),
         ],
     )
@@ -29,8 +29,6 @@ def test_stores_files_with_a_running_prefix(run_root, sap_csv, oracle_csv):
     assert [m.stored_filename for m in manifests] == ["01_sap_export.csv", "02_oracle_export.csv"]
     assert (step / "01_sap_export.csv").read_bytes() == sap_csv
     assert manifests[0].content_hash == hashlib.sha256(sap_csv).hexdigest()
-    assert manifests[0].company_label == "Alpha GmbH"
-    assert manifests[1].company_label is None
     assert manifests[0].read_options.delimiter == ";"
     assert manifests[0].sheet_names == []
     assert load_file_manifests(run_id) == manifests

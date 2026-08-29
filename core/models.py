@@ -46,7 +46,6 @@ class FileManifest(BaseModel):
     stored_filename: str
     content_hash: str
     size_bytes: int
-    company_label: str | None
     file_format: FileFormat
     read_options: ReadOptions
     sheet_names: list[str]
@@ -84,7 +83,6 @@ class Dataset(BaseModel):
     stored_filename: str
     sheet: str | None
     role: SheetRole
-    company_label: str | None
     read_options: ReadOptions
     row_count: int
     column_names: list[str]
@@ -102,7 +100,6 @@ class LlmCall(BaseModel):
 class WorkbookTriage(BaseModel):
     original_filename: str
     stored_filename: str
-    company_label: str | None = None
     sheets: list[SheetProfile]
     classifications: list[SheetClassification]
     llm_call: LlmCall | None
@@ -136,7 +133,6 @@ class FieldMapping(BaseModel):
 class DatasetMapping(BaseModel):
     dataset_id: str
     original_filename: str
-    company_label: str | None = None
     sheet: str | None
     column_profiles: list[ColumnProfile]
     mappings: list[FieldMapping]
@@ -172,12 +168,11 @@ class TableMeta(BaseModel):
 class DatasetContribution(BaseModel):
     dataset_id: str
     original_filename: str
-    company_label: str | None
     sheet: str | None
     row_count: int
     mapped_fields: list[str]
     unmapped_fields: list[str]
-    company_source_counts: dict[str, int]
+    extra_columns: list[str]
 
 
 class CanonicalTableReport(BaseModel):

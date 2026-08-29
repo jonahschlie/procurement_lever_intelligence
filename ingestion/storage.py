@@ -34,12 +34,11 @@ _MANIFESTS = TypeAdapter(list[FileManifest])
 class StagedUpload:
     """A file waiting to be stored, as handed over by the UI."""
 
-    __slots__ = ("data", "filename", "company_label")
+    __slots__ = ("data", "filename")
 
-    def __init__(self, data: bytes, filename: str, company_label: str | None = None):
+    def __init__(self, data: bytes, filename: str):
         self.data = data
         self.filename = filename
-        self.company_label = company_label
 
 
 def store_files(run_id: str, items: list[StagedUpload]) -> list[FileManifest]:
@@ -85,7 +84,6 @@ def _store_one(target: Path, index: int, item: StagedUpload, logger: Logger) -> 
         stored_filename=stored_filename,
         content_hash=hashlib.sha256(item.data).hexdigest(),
         size_bytes=len(item.data),
-        company_label=item.company_label or None,
         file_format=fmt,
         read_options=file_options(item.data, fmt),
         sheet_names=list_sheets(item.data) if fmt == "xlsx" else [],

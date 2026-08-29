@@ -74,7 +74,7 @@ def _render_sidebar() -> list[dict]:
             key=f"uploader_{upload_round}",
         )
 
-        staged = [item for item in map(_stage_file, files or []) if item]
+        staged = [item for item in map(_check_file, files or []) if item]
         if st.button("Start analysis", type="primary", disabled=not staged):
             _start_analysis(staged, upload_round)
 
@@ -83,21 +83,14 @@ def _render_sidebar() -> list[dict]:
     return staged
 
 
-def _stage_file(file) -> dict | None:
+def _check_file(file) -> dict | None:
     data = file.getvalue()
     reason = _unreadable_reason(data, file.name)
     if reason:
         # One unreadable file must not block the others.
         st.error(f"{file.name}: {reason}")
         return None
-
-    company = st.text_input(
-        "Portfolio company",
-        key=f"company_{file.file_id}",
-        placeholder=file.name,
-        help="Used as the display name for this export throughout the analysis.",
-    )
-    return {"data": data, "filename": file.name, "company": company}
+    return {"data": data, "filename": file.name}
 
 
 def _start_analysis(staged: list[dict], upload_round: int) -> None:
@@ -113,7 +106,7 @@ def _start_analysis(staged: list[dict], upload_round: int) -> None:
     # leaving the run describing two different things at once.
     run_id = create_run().run_id
     st.session_state["run_id"] = run_id
-    items = [StagedUpload(item["data"], item["filename"], item["company"]) for item in staged]
+    items = [StagedUpload(item["data"], item["filename"]) for item in staged]
 
     try:
         with st.status("Reading uploads", expanded=True) as status:

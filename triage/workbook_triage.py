@@ -194,7 +194,6 @@ def _triage_file(run_id: str, manifest: FileManifest, client, logger: Logger) ->
         return WorkbookTriage(
             original_filename=manifest.original_filename,
             stored_filename=manifest.stored_filename,
-            company_label=manifest.company_label,
             sheets=profiles,
             classifications=reconcile(
                 [
@@ -220,7 +219,6 @@ def _triage_file(run_id: str, manifest: FileManifest, client, logger: Logger) ->
     return WorkbookTriage(
         original_filename=manifest.original_filename,
         stored_filename=manifest.stored_filename,
-        company_label=manifest.company_label,
         sheets=profiles,
         classifications=reconcile(result.output.sheets, profiles),
         llm_call=LlmCall(
@@ -251,7 +249,6 @@ def _datasets_for(
                 stored_filename=manifest.stored_filename,
                 sheet=entry.sheet or None,
                 role=entry.role,
-                company_label=manifest.company_label,
                 read_options=options,
                 row_count=len(frame),
                 column_names=[str(column) for column in frame.columns],

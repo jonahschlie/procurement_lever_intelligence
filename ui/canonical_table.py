@@ -36,15 +36,11 @@ def render() -> None:
         pd.DataFrame(
             [
                 {
-                    "Company": c.company_label or c.original_filename,
                     "Source": c.original_filename,
                     "Sheet": c.sheet or "-",
                     "Rows": c.row_count,
                     "Mapped fields": len(c.mapped_fields),
-                    "Company from": ", ".join(
-                        f"{source} ({count:,})"
-                        for source, count in sorted(c.company_source_counts.items())
-                    ),
+                    "Spare columns kept": len(c.extra_columns),
                 }
                 for c in report.contributions
             ]
@@ -58,8 +54,15 @@ def render() -> None:
     )
     if unmapped:
         st.caption(
-            "Empty in at least one dataset: "
+            "Canonical fields left empty in at least one dataset: "
             + ", ".join(field_by_key(key).label for key in unmapped)
+        )
+
+    spare = sorted({column for c in report.contributions for column in c.extra_columns})
+    if spare:
+        st.caption(
+            "Source columns kept alongside the schema under an 'extra_' prefix: "
+            + ", ".join(spare)
         )
 
     st.subheader("Preview")

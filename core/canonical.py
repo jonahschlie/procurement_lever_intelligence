@@ -26,9 +26,19 @@ CANONICAL_FIELDS = (
     CanonicalField(
         "company",
         "Company",
-        "The portfolio company or legal entity that booked the transaction. "
-        "Often a company code, entity name or operating unit.",
+        "Identifier of the portfolio company or legal entity that booked the "
+        "transaction, such as a company code or operating unit. If the export "
+        "identifies companies only by name and carries no code, map that column "
+        "here instead.",
         required=True,
+    ),
+    CanonicalField(
+        "company_name",
+        "Company Name",
+        "Readable name of the portfolio company, where the export carries one in "
+        "addition to a code. Leave empty if the only company column has already "
+        "been mapped to company.",
+        required=False,
     ),
     CanonicalField(
         "supplier",

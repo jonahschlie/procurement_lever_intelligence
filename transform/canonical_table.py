@@ -15,6 +15,12 @@ deterministic rules have had their say.
 The schema is complete even where nothing was mapped. All canonical columns
 always exist, unmapped ones empty, so nothing downstream has to test whether a
 column is present.
+
+Source columns the mapping did not claim are carried along under an ``extra_``
+prefix rather than dropped. They are frequently the ones that explain a
+discrepancy later -- a document type that says why a subtotal disagrees with the
+detail -- and going back to the source file to fetch them would defeat the point
+of having a working table.
 """
 
 from logging import Logger
@@ -37,17 +43,11 @@ from triage.workbook_triage import load_datasets
 STEP = "canonical_table"
 ARTIFACT_NAME = "canonicalization.json"
 
-PROVENANCE_COLUMNS = (
-    "dataset_id",
-    "source_file",
-    "source_sheet",
-    "source_row",
-    "company_label",
-)
+PROVENANCE_COLUMNS = ("dataset_id", "source_file", "source_sheet", "source_row")
 CANONICAL_COLUMNS = tuple(field.key for field in CANONICAL_FIELDS)
-RESOLVED_COLUMNS = ("company_source",)
+BASE_COLUMNS = PROVENANCE_COLUMNS + CANONICAL_COLUMNS
 
-COLUMN_ORDER = PROVENANCE_COLUMNS + CANONICAL_COLUMNS + RESOLVED_COLUMNS
+EXTRA_PREFIX = "extra_"
 
 
 def build_canonical_table(run_id: str) -> CanonicalTableReport:
@@ -60,23 +60,20 @@ def build_canonical_table(run_id: str) -> CanonicalTableReport:
         frames.append(frame)
         contributions.append(contribution)
         logger.info(
-            "canonicalized %s: %d rows, %d of %d fields mapped",
+            "canonicalized %s: %d rows, %d of %d fields mapped, %d spare column(s) kept",
             mapping.dataset_id,
             contribution.row_count,
             len(contribution.mapped_fields),
             len(CANONICAL_FIELDS),
+            len(contribution.extra_columns),
         )
 
-    table = (
-        pd.concat(frames, ignore_index=True)
-        if frames
-        else pd.DataFrame({column: pd.Series(dtype=str) for column in COLUMN_ORDER})
-    )
+    table = _stack(frames)
     write_table(run_id, table, STEP, note="built from the confirmed schema mapping")
 
     report = CanonicalTableReport(
         row_count=len(table),
-        column_names=list(COLUMN_ORDER),
+        column_names=[str(column) for column in table.columns],
         contributions=contributions,
     )
     target = step_path(run_id, STEP)
@@ -98,18 +95,20 @@ def _canonicalize(
         for entry in mapping.mappings
         if entry.source_column is not None
     }
+    claimed = set(chosen.values())
+    spare = [str(column) for column in source.columns if str(column) not in claimed]
 
-    canonical = pd.DataFrame(index=source.index)
-    for field in CANONICAL_FIELDS:
-        column = chosen.get(field.key)
-        canonical[field.key] = (
-            source[column].astype(str) if column in source.columns else ""
-        )
-
-    company, company_source = _resolve_company(canonical["company"], dataset.company_label)
-    canonical["company"] = company
-    canonical["company_source"] = company_source
-
+    canonical = pd.DataFrame(
+        {
+            field.key: (
+                source[chosen[field.key]].astype(str)
+                if chosen.get(field.key) in source.columns
+                else ""
+            )
+            for field in CANONICAL_FIELDS
+        },
+        index=source.index,
+    )
     provenance = pd.DataFrame(
         {
             "dataset_id": dataset.dataset_id,
@@ -118,42 +117,39 @@ def _canonicalize(
             # 1-based, and offset by the header row, so it points at the row a
             # reviewer would find when opening the source file.
             "source_row": [str(position + 2) for position in range(len(source))],
-            "company_label": dataset.company_label or "",
         },
         index=source.index,
     )
+    extras = pd.DataFrame(
+        {f"{EXTRA_PREFIX}{column}": source[column].astype(str) for column in spare},
+        index=source.index,
+    )
 
-    frame = pd.concat([provenance, canonical], axis=1)[list(COLUMN_ORDER)]
+    frame = pd.concat([provenance, canonical, extras], axis=1)
     contribution = DatasetContribution(
         dataset_id=dataset.dataset_id,
         original_filename=dataset.original_filename,
-        company_label=dataset.company_label,
         sheet=dataset.sheet,
         row_count=len(frame),
         mapped_fields=[field.key for field in CANONICAL_FIELDS if field.key in chosen],
         unmapped_fields=[field.key for field in CANONICAL_FIELDS if field.key not in chosen],
-        company_source_counts={
-            value: int(count) for value, count in company_source.value_counts().items()
-        },
+        extra_columns=spare,
     )
     return frame, contribution
 
 
-def _resolve_company(
-    mapped: pd.Series, label: str | None
-) -> tuple[pd.Series, pd.Series]:
-    """A company column in the data wins; the name given at upload is the fallback.
+def _stack(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    """Put the datasets under each other, canonical columns first, extras after.
 
-    What is left over is genuinely missing, and section 7 flags it as such.
+    Exports differ in which spare columns they carry, so a column missing from one
+    dataset becomes empty for its rows rather than absent from the table.
     """
-    values = mapped.astype(str).str.strip()
-    present = values != ""
+    if not frames:
+        return pd.DataFrame({column: pd.Series(dtype=str) for column in BASE_COLUMNS})
 
-    resolved = values.where(present, label or "")
-    source = pd.Series("data", index=values.index).where(
-        present, "upload_label" if label else "missing"
-    )
-    return resolved, source
+    table = pd.concat(frames, ignore_index=True)
+    extras = [column for column in table.columns if str(column).startswith(EXTRA_PREFIX)]
+    return table[list(BASE_COLUMNS) + extras].fillna("").astype(str)
 
 
 def load_report(run_id: str) -> CanonicalTableReport:

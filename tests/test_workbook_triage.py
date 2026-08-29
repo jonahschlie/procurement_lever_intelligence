@@ -35,7 +35,7 @@ def _sensible():
 
 def _triage(portfolio_xlsx, proposal=None):  # run_root comes in via the test
     run_id = create_run().run_id
-    store_files(run_id, [StagedUpload(portfolio_xlsx, "portfolio.xlsx", "Northwind")])
+    store_files(run_id, [StagedUpload(portfolio_xlsx, "portfolio.xlsx")])
     artifact = run_workbook_triage(run_id, client=FakeClient(proposal or _sensible()))
     return run_id, artifact
 
@@ -118,7 +118,6 @@ def test_confirmation_builds_datasets_for_everything_but_documentation(portfolio
     assert datasets["transactions"].dataset_id == "01_portfolio__3_spend_data"
     assert datasets["transactions"].row_count == 5
     assert "Name of Supplier" in datasets["transactions"].column_names
-    assert datasets["transactions"].company_label == "Northwind"
     assert datasets["fx_rates"].row_count == 2
     assert load_datasets(run_id) == confirmed.datasets
 
@@ -145,12 +144,6 @@ def test_single_table_files_skip_the_agent(run_root, sap_csv):
 
     assert artifact.workbooks[0].llm_call is None
     assert artifact.workbooks[0].classifications[0].role == "transactions"
-
-
-def test_company_label_travels_with_the_workbook(portfolio_xlsx):
-    _, artifact = _triage(portfolio_xlsx)
-
-    assert artifact.workbooks[0].company_label == "Northwind"
 
 
 def test_log_and_artifacts_are_written(portfolio_xlsx):

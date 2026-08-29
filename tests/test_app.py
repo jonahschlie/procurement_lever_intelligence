@@ -34,9 +34,9 @@ def _page(name, **session):
     return _app(switch_to=name, **session)
 
 
-def _triaged_run(portfolio_xlsx, company="Northwind Holding"):
+def _triaged_run(portfolio_xlsx):
     run_id = create_run().run_id
-    store_files(run_id, [StagedUpload(portfolio_xlsx, "portfolio.xlsx", company)])
+    store_files(run_id, [StagedUpload(portfolio_xlsx, "portfolio.xlsx")])
     run_workbook_triage(
         run_id,
         client=FakeClient(
@@ -107,9 +107,7 @@ def test_review_page_lists_every_sheet_with_its_role(run_root, portfolio_xlsx):
     app = _page("workbook_review", run_id=run_id)
 
     assert not app.exception
-    # The name given at upload is what labels the workbook, not the file name.
-    assert app.subheader[0].value == "Northwind Holding"
-    assert "portfolio.xlsx" in app.caption[0].value
+    assert app.subheader[0].value == "portfolio.xlsx"
 
     table = app.dataframe[0].value
     assert list(table["Sheet"]) == [
@@ -167,15 +165,19 @@ def test_mapping_page_shows_the_table_and_the_raw_rows(run_root, portfolio_xlsx)
     # table, [1] the raw preview underneath it.
     mapping, raw = (element.value for element in app.dataframe)
 
+    # Looked up by field rather than by row number, so adding a canonical field
+    # later does not silently shift what this asserts.
+    rows = mapping.set_index("Canonical field")
+
     assert len(mapping) == len(CANONICAL_FIELDS)
-    assert mapping.loc[1, "Canonical field"] == "Supplier"
-    assert mapping.loc[1, "Source column"] == "Name of Supplier"
-    assert mapping.loc[1, "Status"] == "OK"
+    assert rows.loc["Supplier", "Source column"] == "Name of Supplier"
+    assert rows.loc["Supplier", "Status"] == "OK"
     # Mapped, but below the threshold, so it is still called out for review.
-    assert mapping.loc[5, "Canonical field"] == "Currency"
-    assert mapping.loc[5, "Status"] == "Review"
+    assert rows.loc["Currency", "Status"] == "Review"
     # Never proposed, and required, so it shows as a gap rather than a silent blank.
-    assert mapping.loc[0, "Status"] == "Missing"
+    assert rows.loc["Company", "Status"] == "Missing"
+    # Not required, so an empty optional field is not dressed up as a problem.
+    assert rows.loc["Company Name", "Status"] == "Not mapped"
 
     # Only the transactions sheet was mapped, not the FX or supplier tables.
     assert len(raw) == min(RAW_PREVIEW_ROWS, 5)
@@ -207,23 +209,19 @@ def test_canonical_table_page_reports_what_was_built(run_root, portfolio_xlsx):
     app = _page("canonical_table", run_id=run_id)
 
     assert not app.exception
-    assert [metric.value for metric in app.metric] == ["5", "21", "1"]
+    assert [metric.value for metric in app.metric] == ["5", "29", "1"]
 
     contributions, preview = (element.value for element in app.dataframe)
-    assert contributions.loc[0, "Company"] == "Northwind Holding"
+    assert contributions.loc[0, "Source"] == "portfolio.xlsx"
     assert contributions.loc[0, "Rows"] == 5
     assert preview.loc[0, "supplier"] == "Atlas Freight AB"
-    # Nothing was mapped to company here, so the name given at upload fills in.
-    assert preview.loc[0, "company"] == "Northwind Holding"
-    assert preview.loc[0, "company_source"] == "upload_label"
+    # Unmapped source columns are kept rather than dropped.
+    assert preview.loc[0, "extra_Company Name"] == "Northwind Nordics AB"
 
 
-def test_mapping_tab_is_named_after_the_company(run_root, portfolio_xlsx):
-    run_id = _mapped_run(portfolio_xlsx)
-
-    app = _page("schema_mapping", run_id=run_id)
+def test_start_page_asks_for_nothing_but_the_files(run_root):
+    app = _app()
 
     assert not app.exception
-    from mapping.schema_mapping import load_artifact
-
-    assert load_artifact(run_id).datasets[0].company_label == "Northwind Holding"
+    # No per-file company input: the group is the same for every export.
+    assert not app.sidebar.text_input

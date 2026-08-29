@@ -8,14 +8,15 @@ from ingestion.storage import StagedUpload, store_files
 from mapping.schema_mapping import confirm_mapping, run_schema_mapping
 from tests.conftest import FakeClient
 from transform.canonical_table import (
+    BASE_COLUMNS,
     CANONICAL_COLUMNS,
-    COLUMN_ORDER,
     build_canonical_table,
     load_report,
 )
 from triage.workbook_triage import confirm_triage, run_workbook_triage
 
 SAP_MAPPING = (
+    ("company", "Company Code"),
     ("supplier", "Vendor"),
     ("supplier_id", "Vendor ID"),
     ("amount_local", "Amount LC"),
@@ -23,7 +24,6 @@ SAP_MAPPING = (
     ("posting_date", "Posting Date"),
     ("invoice_number", "Document Number"),
     ("gl_description", "Account Description"),
-    ("company", "Company Code"),
 )
 
 
@@ -49,18 +49,54 @@ def _build(uploads, pairs=SAP_MAPPING):
 
 
 def test_columns_are_canonical_and_complete(run_root, sap_csv):
-    run_id, report = _build([StagedUpload(sap_csv, "sap_export.csv", "Alpha GmbH")])
+    run_id, report = _build([StagedUpload(sap_csv, "sap_export.csv")])
     table = load_table(run_id)
 
-    assert list(table.columns) == list(COLUMN_ORDER)
+    assert list(table.columns)[: len(BASE_COLUMNS)] == list(BASE_COLUMNS)
     # Every canonical field exists, including the ones nothing was mapped to.
     assert set(CANONICAL_COLUMNS) == {field.key for field in CANONICAL_FIELDS}
     assert (table["cost_center"] == "").all()
-    assert report.column_names == list(COLUMN_ORDER)
+    assert report.column_names == list(table.columns)
+
+
+def test_unmapped_source_columns_are_kept(run_root, sap_csv):
+    run_id, report = _build([StagedUpload(sap_csv, "sap_export.csv")])
+    table = load_table(run_id)
+
+    # Nothing was mapped to it, but it is still in the table rather than lost.
+    assert "extra_Vendor ID" not in table.columns  # this one was mapped
+    assert report.contributions[0].extra_columns == []
+
+    pairs = tuple((f, c) for f, c in SAP_MAPPING if f != "gl_description")
+    run_id, report = _build([StagedUpload(sap_csv, "sap_export.csv")], pairs)
+    table = load_table(run_id)
+
+    assert report.contributions[0].extra_columns == ["Account Description"]
+    assert table.loc[0, "extra_Account Description"] == "Frachtkosten"
+    assert (table["gl_description"] == "").all()
+
+
+def test_spare_columns_of_different_datasets_are_unioned(run_root, sap_csv, oracle_csv):
+    pairs = (("supplier", "Vendor"),)
+
+    run_id, _ = _build(
+        [StagedUpload(sap_csv, "sap_export.csv"), StagedUpload(oracle_csv, "oracle_export.csv")],
+        pairs,
+    )
+    table = load_table(run_id)
+
+    # A column only one export has is empty for the other's rows, never absent.
+    assert "extra_Currency" in table.columns
+    assert "extra_Currency Code" in table.columns
+    sap = table[table["dataset_id"] == "01_sap_export"]
+    oracle = table[table["dataset_id"] == "02_oracle_export"]
+    assert (sap["extra_Currency"] == "EUR").all()
+    assert (sap["extra_Currency Code"] == "").all()
+    assert (oracle["extra_Currency Code"] == "USD").all()
 
 
 def test_values_are_renamed_not_converted(run_root, sap_csv):
-    run_id, _ = _build([StagedUpload(sap_csv, "sap_export.csv", "Alpha GmbH")])
+    run_id, _ = _build([StagedUpload(sap_csv, "sap_export.csv")])
     table = load_table(run_id)
 
     assert table.loc[0, "supplier"] == "Müller Logistik GmbH"
@@ -71,52 +107,31 @@ def test_values_are_renamed_not_converted(run_root, sap_csv):
 
 
 def test_provenance_points_back_at_the_source_row(run_root, sap_csv):
-    run_id, _ = _build([StagedUpload(sap_csv, "sap_export.csv", "Alpha GmbH")])
+    run_id, _ = _build([StagedUpload(sap_csv, "sap_export.csv")])
     table = load_table(run_id)
 
     assert table.loc[0, "dataset_id"] == "01_sap_export"
     assert table.loc[0, "source_file"] == "sap_export.csv"
     assert table.loc[0, "source_sheet"] == ""
-    assert table.loc[0, "company_label"] == "Alpha GmbH"
     # Row 1 of the data is line 2 of the file, because line 1 is the header.
     assert list(table["source_row"]) == ["2", "3", "4", "5", "6"]
 
 
-def test_company_comes_from_the_data_when_there_is_a_column(run_root, sap_csv):
-    run_id, report = _build([StagedUpload(sap_csv, "sap_export.csv", "Alpha GmbH")])
+def test_company_and_company_name_are_separate_fields(run_root, sap_csv):
+    run_id, _ = _build([StagedUpload(sap_csv, "sap_export.csv")])
     table = load_table(run_id)
 
     assert list(table["company"])[:2] == ["DE01", "DE01"]
-    assert (table["company_source"] == "data").all()
-    assert report.contributions[0].company_source_counts == {"data": 5}
-
-
-def test_upload_label_fills_in_when_the_data_has_no_company(run_root, sap_csv):
-    pairs = tuple((f, c) for f, c in SAP_MAPPING if f != "company")
-
-    run_id, report = _build([StagedUpload(sap_csv, "sap_export.csv", "Alpha GmbH")], pairs)
-    table = load_table(run_id)
-
-    assert (table["company"] == "Alpha GmbH").all()
-    assert (table["company_source"] == "upload_label").all()
-    assert report.contributions[0].company_source_counts == {"upload_label": 5}
-
-
-def test_company_stays_missing_without_a_column_or_a_label(run_root, sap_csv):
-    pairs = tuple((f, c) for f, c in SAP_MAPPING if f != "company")
-
-    run_id, _ = _build([StagedUpload(sap_csv, "sap_export.csv")], pairs)
-    table = load_table(run_id)
-
-    assert (table["company"] == "").all()
-    assert (table["company_source"] == "missing").all()
+    # The SAP fixture carries only a code, so the readable name stays empty.
+    assert (table["company_name"] == "").all()
+    assert "company_name" in CANONICAL_COLUMNS
 
 
 def test_datasets_are_stacked_into_one_table(run_root, sap_csv, oracle_csv):
     run_id, report = _build(
         [
-            StagedUpload(sap_csv, "sap_export.csv", "Alpha GmbH"),
-            StagedUpload(oracle_csv, "oracle_export.csv", "Beta Inc"),
+            StagedUpload(sap_csv, "sap_export.csv"),
+            StagedUpload(oracle_csv, "oracle_export.csv"),
         ]
     )
     table = load_table(run_id)
@@ -128,11 +143,11 @@ def test_datasets_are_stacked_into_one_table(run_root, sap_csv, oracle_csv):
     # The Oracle export has none of the SAP column names, so its canonical fields are empty.
     oracle = table[table["dataset_id"] == "02_oracle_export"]
     assert (oracle["supplier"] == "").all()
-    assert (oracle["company"] == "Beta Inc").all()
+    assert (oracle["company"] == "").all()
 
 
 def test_report_lists_mapped_and_unmapped_fields(run_root, sap_csv):
-    _, report = _build([StagedUpload(sap_csv, "sap_export.csv", "Alpha GmbH")])
+    _, report = _build([StagedUpload(sap_csv, "sap_export.csv")])
     contribution = report.contributions[0]
 
     assert set(contribution.mapped_fields) == {field for field, _ in SAP_MAPPING}
@@ -143,7 +158,7 @@ def test_report_lists_mapped_and_unmapped_fields(run_root, sap_csv):
 
 
 def test_step_and_table_metadata_are_recorded(run_root, sap_csv):
-    run_id, _ = _build([StagedUpload(sap_csv, "sap_export.csv", "Alpha GmbH")])
+    run_id, _ = _build([StagedUpload(sap_csv, "sap_export.csv")])
 
     assert [s.step for s in load_run(run_id).steps] == [
         "ingestion",
@@ -166,6 +181,8 @@ def test_empty_mapping_still_produces_the_schema(run_root, sap_csv):
     table = load_table(run_id)
 
     assert len(table) == 5
-    assert list(table.columns) == list(COLUMN_ORDER)
+    assert list(table.columns)[: len(BASE_COLUMNS)] == list(BASE_COLUMNS)
     assert report.contributions[0].mapped_fields == []
+    # Nothing mapped means every source column is carried as a spare one.
+    assert len(report.contributions[0].extra_columns) == 8
     assert isinstance(table, pd.DataFrame)

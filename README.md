@@ -88,10 +88,13 @@ Rows are never removed from it (SYSTEMCONCEPT section 8): eligibility for an ana
 through flag columns, which is what keeps the totals reconcilable against the source. A rewrite
 therefore only ever adds columns, and `canonical_table.json` records what each step changed.
 
-Alongside the 15 canonical fields the table carries where each row came from — `dataset_id`,
-`source_file`, `source_sheet`, `source_row`, `company_label` — so any figure can be traced back to a
-line in the original export. `company_source` records whether the company name came from a column in
-the data, from the name given at upload, or is genuinely missing.
+Alongside the canonical fields the table carries where each row came from — `dataset_id`,
+`source_file`, `source_sheet`, `source_row` — so any figure can be traced back to a line in the
+original export.
+
+Source columns the mapping did not claim are kept under an `extra_` prefix rather than dropped. They
+are often the ones that explain a discrepancy later, and going back to the source file to fetch them
+would defeat the point of having a working table.
 
 ## Agents
 
