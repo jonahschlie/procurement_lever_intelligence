@@ -51,9 +51,11 @@ def render() -> None:
 
 
 def _render_workbook(workbook: WorkbookTriage) -> pd.DataFrame:
-    st.subheader(workbook.original_filename)
+    st.subheader(workbook.company_label or workbook.original_filename)
+    source = f"Source file: {workbook.original_filename}"
     if workbook.llm_call is None:
-        st.caption("Only one table in this file, so no agent was needed.")
+        source += "  |  only one table in this file, so no agent was needed"
+    st.caption(source)
 
     profiles = {profile.name: profile for profile in workbook.sheets}
     return st.data_editor(

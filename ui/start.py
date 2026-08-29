@@ -1,33 +1,41 @@
-"""Start screen: what the platform does, then upload and launch the analysis."""
+"""Start screen: explain the platform, take the uploads, launch the analysis.
 
-import pandas as pd
+The main area stays an explanation. Everything the user operates lives in the
+sidebar, and the first look at the data is the workbook review -- which shows
+what was actually recognised rather than a preview of bytes that may well be a
+cover letter.
+"""
+
 import streamlit as st
 
 from agents.client import api_key_configured
-from core.config import ALLOWED_EXTENSIONS, PREVIEW_ROWS
-from core.models import ReadOptions, SheetProfile
+from core.config import ALLOWED_EXTENSIONS
 from core.run import create_run
-from ingestion.readers import file_format, file_options, read_tabular
-from ingestion.sheet_profile import best_table_sheet, profile_sheets
+from ingestion.readers import file_format, file_options, list_sheets
 from ingestion.storage import StagedUpload, store_files
-from mapping.schema_mapping import run_schema_mapping
-from triage.workbook_triage import confirm_triage, needs_review, run_workbook_triage
+from triage.workbook_triage import run_workbook_triage
 from ui.sidebar import render_run_sidebar
 
 
 @st.cache_data(show_spinner=False)
-def _parse(data: bytes, filename: str, sheet: str | None) -> tuple[pd.DataFrame, ReadOptions]:
-    return read_tabular(data, filename, sheet)
+def _unreadable_reason(data: bytes, filename: str) -> str | None:
+    """Cheap check that the file can be opened at all.
 
-
-@st.cache_data(show_spinner=False)
-def _profiles(data: bytes, filename: str) -> list[SheetProfile]:
-    fmt = file_format(filename)
-    return profile_sheets(data, fmt, file_options(data, fmt))
+    Deliberately not a full parse: this only has to catch a file that cannot be
+    read, early enough to name which one, without spending time on the others.
+    """
+    try:
+        fmt = file_format(filename)
+        file_options(data, fmt)
+        if fmt == "xlsx":
+            list_sheets(data)
+    except Exception as error:
+        return str(error)
+    return None
 
 
 def render() -> None:
-    render_run_sidebar()
+    staged = _render_sidebar()
 
     st.title("Procurement Lever Intelligence")
     st.markdown(
@@ -37,71 +45,62 @@ def render() -> None:
         "spend reduction and contract optimization.\n\n"
         "Anything that can be calculated is calculated. Spend figures, aggregations and "
         "quality checks never pass through a language model. AI is used only where "
-        "meaning has to be interpreted, beginning with the steps below, which work out "
-        "which sheets hold data and translate their columns into the canonical "
-        "procurement schema."
-    )
-    st.divider()
-
-    st.subheader("Upload ERP exports")
-    st.caption(
-        "One export per portfolio company. Files are stored unchanged and every value is "
-        "read as text, so nothing is reinterpreted before the rule engine runs."
+        "meaning has to be interpreted."
     )
 
-    _render_start_results()
-
-    upload_round = st.session_state.get("upload_round", 0)
-    files = st.file_uploader(
-        "CSV or Excel export",
-        type=list(ALLOWED_EXTENSIONS),
-        accept_multiple_files=True,
-        key=f"uploader_{upload_round}",
+    st.subheader("How it works")
+    st.markdown(
+        "1. **Upload** one ERP export per portfolio company in the sidebar. Files are "
+        "stored unchanged and every value is read as text, so nothing is reinterpreted.\n"
+        "2. **Workbook review** — a submission is usually a workbook rather than a table. "
+        "Shape decides which sheets are data at all; an agent decides what each table is "
+        "for. You confirm before anything is analysed.\n"
+        "3. **Schema mapping** — the transaction columns are translated into the canonical "
+        "procurement schema, with a confidence score and a comment per field, which you "
+        "can correct."
     )
 
-    if not files:
-        return
-
-    staged = [_stage_file(file) for file in files]
-    readable = [item for item in staged if item.get("frame") is not None]
-    if st.button("Start analysis", type="primary", disabled=not readable):
-        _start_analysis(readable, upload_round)
+    if not staged:
+        st.info("Upload an ERP export in the sidebar to begin.")
 
 
-def _stage_file(file) -> dict:
-    data = file.getvalue()
-    with st.expander(file.name, expanded=True):
-        company = st.text_input(
-            "Portfolio company (optional)",
-            key=f"company_{file.file_id}",
-            help="Fallback only. A company column inside the export takes precedence.",
+def _render_sidebar() -> list[dict]:
+    with st.sidebar:
+        st.subheader("Upload")
+        upload_round = st.session_state.get("upload_round", 0)
+        files = st.file_uploader(
+            "CSV or Excel export",
+            type=list(ALLOWED_EXTENSIONS),
+            accept_multiple_files=True,
+            key=f"uploader_{upload_round}",
         )
-        try:
-            profiles = _profiles(data, file.name)
-            # Preview the sheet that looks like data, not simply the first one: in a
-            # submission workbook the first sheet is usually the cover letter.
-            sheet = best_table_sheet(profiles)
-            frame, options = _parse(data, file.name, sheet)
-        except Exception as error:
-            # Batch upload: one unreadable file must not block the others, so the
-            # failure is surfaced here instead of propagating.
-            st.error(f"Could not read this file: {error}")
-            return {"file": file}
 
-        st.caption(_describe(frame, options, profiles))
-        st.dataframe(frame.head(PREVIEW_ROWS), width="stretch")
-        return {"file": file, "data": data, "company": company, "frame": frame}
+        staged = [item for item in map(_stage_file, files or []) if item]
+        if st.button("Start analysis", type="primary", disabled=not staged):
+            _start_analysis(staged, upload_round)
+
+        _render_start_results()
+        st.divider()
+
+    render_run_sidebar()
+    return staged
 
 
-def _describe(frame: pd.DataFrame, options: ReadOptions, profiles: list[SheetProfile]) -> str:
-    parts = [f"{len(frame):,} rows x {len(frame.columns)} columns"]
-    if options.delimiter:
-        parts.append(f"delimiter {options.delimiter!r}")
-    if options.encoding:
-        parts.append(f"encoding {options.encoding}")
-    if len(profiles) > 1:
-        parts.append(f"showing sheet '{options.sheet}' of {len(profiles)}")
-    return "  |  ".join(parts)
+def _stage_file(file) -> dict | None:
+    data = file.getvalue()
+    reason = _unreadable_reason(data, file.name)
+    if reason:
+        # One unreadable file must not block the others.
+        st.error(f"{file.name}: {reason}")
+        return None
+
+    company = st.text_input(
+        "Portfolio company",
+        key=f"company_{file.file_id}",
+        placeholder=file.name,
+        help="Used as the display name for this export throughout the analysis.",
+    )
+    return {"data": data, "filename": file.name, "company": company}
 
 
 def _start_analysis(staged: list[dict], upload_round: int) -> None:
@@ -114,32 +113,22 @@ def _start_analysis(staged: list[dict], upload_round: int) -> None:
 
     run_id = st.session_state.get("run_id") or create_run().run_id
     st.session_state["run_id"] = run_id
-    items = [StagedUpload(item["data"], item["file"].name, item["company"]) for item in staged]
+    items = [StagedUpload(item["data"], item["filename"], item["company"]) for item in staged]
 
     try:
-        with st.status("Running analysis", expanded=True) as status:
-            st.write(f"Storing {len(items)} file(s) in {run_id}")
+        with st.status("Reading uploads", expanded=True) as status:
+            st.write(f"Storing {len(items)} file(s)")
             store_files(run_id, items)
-
             st.write("Working out which sheets hold data")
-            triage = run_workbook_triage(run_id)
-
-            if needs_review(triage):
-                status.update(label="Sheets identified", state="complete")
-                target = "workbook_review"
-            else:
-                confirm_triage(run_id)
-                st.write("Mapping columns onto the canonical procurement schema")
-                run_schema_mapping(run_id)
-                status.update(label="Analysis complete", state="complete")
-                target = "schema_mapping"
+            run_workbook_triage(run_id)
+            status.update(label="Sheets identified", state="complete")
     except Exception as error:
-        st.session_state["start_results"] = [("error", f"Analysis failed: {error}")]
+        st.session_state["start_results"] = [("error", f"Could not read the uploads: {error}")]
         st.rerun()
         return
 
     st.session_state["upload_round"] = upload_round + 1
-    st.session_state["switch_to"] = target
+    st.session_state["switch_to"] = "workbook_review"
     st.rerun()
 
 

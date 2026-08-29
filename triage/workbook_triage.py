@@ -110,15 +110,6 @@ def confirm_triage(
     return confirmed
 
 
-def needs_review(artifact: WorkbookTriageArtifact) -> bool:
-    """Whether there is anything for the user to decide.
-
-    A CSV or a single-sheet workbook leaves no choice, so the review is skipped.
-    The page stays reachable from the sidebar either way.
-    """
-    return any(len(workbook.sheets) > 1 for workbook in artifact.workbooks)
-
-
 def load_triage(run_id: str) -> WorkbookTriageArtifact:
     return _load(step_path(run_id, STEP) / ARTIFACT_NAME)
 
@@ -203,6 +194,7 @@ def _triage_file(run_id: str, manifest: FileManifest, client, logger: Logger) ->
         return WorkbookTriage(
             original_filename=manifest.original_filename,
             stored_filename=manifest.stored_filename,
+            company_label=manifest.company_label,
             sheets=profiles,
             classifications=reconcile(
                 [
@@ -228,6 +220,7 @@ def _triage_file(run_id: str, manifest: FileManifest, client, logger: Logger) ->
     return WorkbookTriage(
         original_filename=manifest.original_filename,
         stored_filename=manifest.stored_filename,
+        company_label=manifest.company_label,
         sheets=profiles,
         classifications=reconcile(result.output.sheets, profiles),
         llm_call=LlmCall(

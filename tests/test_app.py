@@ -33,9 +33,9 @@ def _page(name, **session):
     return _app(switch_to=name, **session)
 
 
-def _triaged_run(portfolio_xlsx):
+def _triaged_run(portfolio_xlsx, company="Northwind Holding"):
     run_id = create_run().run_id
-    store_files(run_id, [StagedUpload(portfolio_xlsx, "portfolio.xlsx")])
+    store_files(run_id, [StagedUpload(portfolio_xlsx, "portfolio.xlsx", company)])
     run_workbook_triage(
         run_id,
         client=FakeClient(
@@ -72,6 +72,17 @@ def test_start_page_greets_and_explains(run_root):
     assert any("No run started yet" in caption.value for caption in app.sidebar.caption)
 
 
+def test_start_page_keeps_the_controls_in_the_sidebar(run_root):
+    app = _app()
+
+    assert not app.exception
+    assert len(app.sidebar.file_uploader) == 1
+    assert [button.label for button in app.sidebar.button] == ["Start analysis"]
+    # No preview: the workbook review is the first look at the data.
+    assert not app.dataframe
+    assert "Upload an ERP export in the sidebar" in app.info[0].value
+
+
 def test_review_page_is_empty_without_a_run(run_root):
     app = _page("workbook_review")
 
@@ -94,6 +105,10 @@ def test_review_page_lists_every_sheet_with_its_role(run_root, portfolio_xlsx):
     app = _page("workbook_review", run_id=run_id)
 
     assert not app.exception
+    # The name given at upload is what labels the workbook, not the file name.
+    assert app.subheader[0].value == "Northwind Holding"
+    assert "portfolio.xlsx" in app.caption[0].value
+
     table = app.dataframe[0].value
     assert list(table["Sheet"]) == [
         "1. Brief",
@@ -158,3 +173,19 @@ def test_mapping_page_shows_the_table_and_the_raw_rows(run_root, portfolio_xlsx)
     # Only the transactions sheet was mapped, not the FX or supplier tables.
     assert len(raw) == min(RAW_PREVIEW_ROWS, 5)
     assert raw.loc[0, "Name of Supplier"] == "Atlas Freight AB"
+
+
+def test_mapping_tab_is_named_after_the_company(run_root, portfolio_xlsx):
+    run_id = _triaged_run(portfolio_xlsx)
+    confirm_triage(run_id)
+    run_schema_mapping(
+        run_id,
+        client=FakeClient(SchemaMappingProposal(mappings=[])),
+    )
+
+    app = _page("schema_mapping", run_id=run_id)
+
+    assert not app.exception
+    from mapping.schema_mapping import load_artifact
+
+    assert load_artifact(run_id).datasets[0].company_label == "Northwind Holding"

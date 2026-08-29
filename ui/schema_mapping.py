@@ -90,7 +90,8 @@ def _render_dataset(run_id: str, dataset: DatasetMapping) -> None:
 
 
 def _label(dataset: DatasetMapping) -> str:
-    return f"{dataset.original_filename} - {dataset.sheet}" if dataset.sheet else dataset.original_filename
+    name = dataset.company_label or dataset.original_filename
+    return f"{name} - {dataset.sheet}" if dataset.sheet else name
 
 
 def _status(mapping: FieldMapping) -> str:

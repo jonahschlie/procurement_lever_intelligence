@@ -102,6 +102,7 @@ class LlmCall(BaseModel):
 class WorkbookTriage(BaseModel):
     original_filename: str
     stored_filename: str
+    company_label: str | None = None
     sheets: list[SheetProfile]
     classifications: list[SheetClassification]
     llm_call: LlmCall | None
@@ -135,6 +136,7 @@ class FieldMapping(BaseModel):
 class DatasetMapping(BaseModel):
     dataset_id: str
     original_filename: str
+    company_label: str | None = None
     sheet: str | None
     column_profiles: list[ColumnProfile]
     mappings: list[FieldMapping]

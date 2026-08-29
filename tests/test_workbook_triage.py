@@ -7,7 +7,6 @@ from triage.workbook_triage import (
     load_confirmed_triage,
     load_datasets,
     load_triage,
-    needs_review,
     reconcile,
     run_workbook_triage,
 )
@@ -137,7 +136,7 @@ def test_user_can_override_a_role(portfolio_xlsx):
     assert {d.role for d in confirmed.datasets} == {"transactions", "fx_rates"}
 
 
-def test_single_table_files_skip_the_agent_and_the_review(run_root, sap_csv):
+def test_single_table_files_skip_the_agent(run_root, sap_csv):
     run_id = create_run().run_id
     store_files(run_id, [StagedUpload(sap_csv, "sap_export.csv")])
 
@@ -146,13 +145,12 @@ def test_single_table_files_skip_the_agent_and_the_review(run_root, sap_csv):
 
     assert artifact.workbooks[0].llm_call is None
     assert artifact.workbooks[0].classifications[0].role == "transactions"
-    assert needs_review(artifact) is False
 
 
-def test_multi_sheet_workbooks_need_review(portfolio_xlsx):
+def test_company_label_travels_with_the_workbook(portfolio_xlsx):
     _, artifact = _triage(portfolio_xlsx)
 
-    assert needs_review(artifact) is True
+    assert artifact.workbooks[0].company_label == "Northwind"
 
 
 def test_log_and_artifacts_are_written(portfolio_xlsx):
