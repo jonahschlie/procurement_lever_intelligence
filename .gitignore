@@ -1,0 +1,46 @@
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.Spotlight-V100
+.Trashes
+._*
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Node (falls spaeter ein Frontend/Dashboard dazukommt) ---
+node_modules/
+dist/
+build/
+.next/
+*.log
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.swp
+
+# --- Secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+credentials.json
+
+# --- Daten- und Office-Artefakte ---
+~$*.xlsx
+~$*.docx
+*.tmp
+
+# Grosse oder mandantensensible Rohdaten bewusst nicht einchecken.
+# Bei Bedarf aktivieren -- Rohdaten bleiben dann rein lokal:
+# data/raw/
