@@ -35,6 +35,7 @@ PIPELINE_STEPS = (
     "spend_classification",
     "levers",
     "executive_summary",
+    "export",
 )
 
 RUN_MANIFEST_NAME = "run.json"

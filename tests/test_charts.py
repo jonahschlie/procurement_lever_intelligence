@@ -85,3 +85,19 @@ def test_every_figure_carries_the_numbers_behind_it():
     figure = charts.supplier_share(pd.Series({"A": 1.0}))
 
     assert isinstance(figure.data, pd.DataFrame)
+
+
+def test_the_view_population_is_empty_where_a_stage_has_not_run():
+    """Eligibility, the euro amount and the canonical supplier come from three
+    different stages. Missing one is a shorter report, not a crash."""
+    import pandas as pd
+
+    from analysis import views
+
+    flagged_only = pd.DataFrame({"include_addressable_spend": [True, True]})
+    assert views.addressable(flagged_only).empty
+
+    no_supplier_yet = pd.DataFrame(
+        {"include_addressable_spend": [True], "amount_eur": [100.0]}
+    )
+    assert views.addressable(no_supplier_yet).empty

@@ -12,12 +12,10 @@ from agents.analysis_chat import ChatAnswer
 from agents.analysis_chat import build_input as chat_input
 from agents.analysis_chat import definition as chat_definition
 from agents.base import run_agent
-from analysis import charts, views
-from analysis.spend_report import build_spend_report
+from analysis import report
 from analysis.summary import analysis_context, has_summary, load_summary
-from core.canonical import company_key
 from core.table import has_table, load_table
-from levers.definitions import BY_ID, SPEND_KINDS
+from levers.definitions import SPEND_KINDS
 from levers.engine import has_artifact, load_artifact
 from ui import levers as levers_page
 from ui.format import as_money, eur, eur_compact, money, percent
@@ -47,8 +45,16 @@ def render() -> None:
     table = load_table(run_id) if has_table(run_id) else pd.DataFrame()
     artifact = load_artifact(run_id) if has_artifact(run_id) else None
 
-    overview, top, catalogue, visuals, questions, chat = st.tabs(
-        ["Overview", "Top Levers", "All Levers", "Visuals", "Open Questions", "Ask the Analysis"]
+    overview, top, catalogue, visuals, questions, chat, export = st.tabs(
+        [
+            "Overview",
+            "Top Levers",
+            "All Levers",
+            "Visuals",
+            "Open Questions",
+            "Ask the Analysis",
+            "Export",
+        ]
     )
     with overview:
         _overview(summary, artifact, table)
@@ -62,6 +68,8 @@ def render() -> None:
         _questions(summary, artifact)
     with chat:
         _chat(run_id, table)
+    with export:
+        _export(run_id)
 
 
 def _overview(summary, artifact, table) -> None:
@@ -218,57 +226,41 @@ def _catalogue(artifact, table) -> None:
 
 
 def _visuals(table: pd.DataFrame, artifact) -> None:
+    """The figures, as assembled in analysis.report -- the same list both exports draw."""
     if table.empty:
         st.info("No table to visualise yet.")
         return
 
-    rows = views.addressable(table)
-    if "include_spend_analysis" in table.columns:
-        report = build_spend_report(st.session_state["run_id"])
-        st.subheader("From booked to negotiable")
-        chain = [{"label": s.label, "amount": s.amount, "delta": s.delta} for s in report.chain]
-        _figure(charts.spend_waterfall(chain))
-
-    if rows.empty:
+    blocks = report.visual_blocks(table, artifact)
+    if not blocks:
         st.info("No addressable spend to chart yet.")
         return
 
-    st.subheader("Where the money goes")
-    spend = views.supplier_spend(rows)
-    left, right = st.columns([1, 1])
-    with left:
-        _figure(charts.supplier_share(spend), key="share")
-    with right:
-        _figure(charts.supplier_ranking(spend), key="ranking")
+    for block in blocks:
+        st.subheader(block.title)
+        if block.caption:
+            st.caption(block.caption)
 
-    st.subheader("By company")
-    company = company_key(rows)
-    companies = sorted(company.astype(str).unique())
-    if companies:
-        chosen = st.selectbox("Company", companies)
-        subset = rows[company == chosen]
-        st.caption(
-            f"{eur(subset['amount_eur'].sum())} EUR across "
-            f"{subset['supplier_normalized'].nunique()} suppliers"
-        )
-        _figure(charts.supplier_share(views.supplier_spend(subset)), key="company")
-
-    st.subheader("Spend over the year")
-    _figure(charts.monthly_spend(views.monthly_spend(rows)), key="monthly")
-
-    st.subheader("Contract coverage by company")
-    _figure(charts.contract_coverage(views.contract_coverage(rows)), key="contracts")
-
-    if artifact:
-        st.subheader("How the spend divides across levers")
-        st.caption("Each euro is credited to exactly one lever, so these add up to the whole.")
-        names = {key: lever.name for key, lever in BY_ID.items()}
-        _figure(charts.lever_allocation(views.lever_allocation(rows, names)), key="allocation")
+        if block.block_id == report.BY_COMPANY:
+            # A document shows all of these side by side; a screen offers a choice.
+            chosen = st.selectbox("Company", block.labels)
+            _figure(block.figures[block.labels.index(chosen)], key="company")
+        elif len(block.figures) == 2:
+            for column, figure, key in zip(
+                st.columns(2), block.figures, ("left", "right")
+            ):
+                with column:
+                    _figure(figure, key=f"{block.title}-{key}")
+        else:
+            for index, figure in enumerate(block.figures):
+                _figure(figure, key=f"{block.title}-{index}")
 
 
 def _figure(figure, key: str = "") -> None:
     """A chart with the numbers behind it, as the guideline requires."""
     st.altair_chart(figure.chart, width="stretch")
+    if figure.caption:
+        st.caption(figure.caption)
     if not figure.data.empty:
         with st.expander("Show data"):
             st.dataframe(
@@ -331,6 +323,52 @@ def _questions(summary, artifact) -> None:
             st.markdown(f"**{entry.question}**")
             st.caption(f"Ask: {entry.addressee}  ·  Because: {entry.rationale}")
             st.caption(f"Would let us: {entry.unlocks}")
+
+
+def _export(run_id: str) -> None:
+    """Both files, built on request. Neither is worth generating unasked."""
+    from analysis.report import build_report
+    from export.artifacts import build_exports, file_stem
+
+    st.subheader("Take the analysis with you")
+    st.markdown(
+        "- **Workbook** — every section as a sheet, charts bound to their data, and the "
+        "canonical table twice: the business fields, and all of them. Amounts are numbers, "
+        "so it pivots.\n"
+        "- **Report** — one HTML file that looks and behaves like these tabs. The chart "
+        "runtime is embedded, so it works with the network switched off."
+    )
+
+    if not st.button("Build both", type="primary"):
+        return
+
+    with st.status("Building the export", expanded=True) as status:
+        st.write("Assembling the document")
+        stem = file_stem(build_report(run_id))
+        st.write("Writing the workbook and the report")
+        workbook, page = build_exports(run_id)
+        status.update(
+            label=f"Ready — {len(workbook) / 1e6:.1f} MB workbook, "
+            f"{len(page.encode('utf-8')) / 1e6:.1f} MB report",
+            state="complete",
+        )
+
+    left, right = st.columns(2)
+    left.download_button(
+        "Download workbook (.xlsx)",
+        workbook,
+        file_name=f"{stem}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        width="stretch",
+    )
+    right.download_button(
+        "Download report (.html)",
+        page,
+        file_name=f"{stem}.html",
+        mime="text/html",
+        width="stretch",
+    )
+    st.caption("Both files are also kept with this run, next to the artifacts they came from.")
 
 
 def _chat(run_id: str, table: pd.DataFrame) -> None:

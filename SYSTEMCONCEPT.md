@@ -177,7 +177,7 @@ Dashboard
 | Lever Quantification and Reasoning | 16.1 | built |
 | Lever Catalogue and Data Requests | 16.1 | built |
 | Executive Summary | 15, 17–19 | built |
-| Excel Export | 15 | open |
+| Export (Excel and HTML) | 15 | built |
 
 ---
 
@@ -1085,6 +1085,47 @@ Analytics      AI Reasoning
 ```
 
 ---
+
+## Handing the Analysis On
+
+An analysis that ends in a browser cannot be given to anyone. Two outputs close
+that, for two different readers, and both are built on request rather than on
+every run — nobody needs a nine megabyte workbook they did not ask for. Both are
+kept in the run as the artifacts of a stage, so a report that has been sent
+somewhere stays findable next to the evidence for it.
+
+**One assembly, two renderings.** `analysis/report.py` decides what a report
+contains, in what order, with which figures and which tables underneath them. The
+Executive Summary screen, the workbook and the HTML file each only decide how to
+draw that. Assembled separately they would agree today and diverge at the first
+new chart, which is why the screen's Visuals tab renders the same list the exports
+do rather than a parallel one.
+
+**Excel — for the reader who carries on calculating.** One sheet per section, one
+per figure, and the canonical table twice: the business fields, and all of them
+with every flag. Charts are native Excel charts bound to the sheet they sit on, so
+they can be recoloured, resized and pasted into a deck. Amounts are written as
+numbers with a display format, never as pre-formatted text — a workbook whose
+figures cannot be pivoted misses the point of being a workbook. Excel has no
+waterfall openpyxl can write, so it is a stacked bar with an invisible base series,
+the standard construction.
+
+**HTML — for the reader who only wants to read it.** One file, no request leaves
+the page when it opens. A report mailed to a portfolio company gets opened from a
+download folder, on a train, behind a corporate proxy, so the Vega runtime is
+embedded rather than fetched from a CDN. Written once and shared by every chart it
+costs about a megabyte; carried per chart it would be nine.
+
+Two things that took measuring rather than reasoning:
+
+- Text from the data — supplier names, GL descriptions, the agent's own sentences
+  — reaches both the page and the chart specifications. In the page it is escaped
+  as text. Inside the `<script>` element that carries the specifications, escaping
+  as HTML is not enough: a browser looks for `</script>` before it looks for JSON,
+  so those characters are written as `\u` sequences, which keeps the JSON valid
+  and the sequence unwritable.
+- A chart in an inactive tab has no width to measure, so every specification
+  carries an explicit one rather than sizing to its container.
 
 ## Spend Cube Structure
 

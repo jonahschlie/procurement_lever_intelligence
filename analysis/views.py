@@ -9,9 +9,14 @@ import pandas as pd
 from core.canonical import company_key
 
 
+# Eligibility, the euro amount and the canonical supplier arrive from three
+# different stages. A run that stopped before one of them has nothing to draw.
+REQUIRED = ("include_addressable_spend", "amount_eur", "supplier_normalized")
+
+
 def addressable(table: pd.DataFrame) -> pd.DataFrame:
     """Negotiable spend with a named supplier -- the population every view uses."""
-    if table.empty or "include_addressable_spend" not in table.columns:
+    if table.empty or not set(REQUIRED) <= set(table.columns):
         return table.iloc[0:0]
     rows = table[table["include_addressable_spend"].astype(bool)]
     rows = rows[rows["amount_eur"].notna()]

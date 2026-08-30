@@ -44,7 +44,11 @@ levers are measured against.
     full catalogue, the spend chain and supplier share drawn, the open data and business questions,
     and a chat grounded in this run's figures.
 
-An Excel export of the same material follows.
+12. **Export** — the same material as a workbook and as a single HTML file. The workbook carries
+    native charts bound to their data and the canonical table twice, business fields and all of
+    them; amounts are numbers, so it pivots. The HTML file looks and behaves like the summary tabs
+    and embeds its chart runtime, so it opens with the network switched off. Both are built on
+    request and kept with the run.
 
 ## Setup
 
@@ -108,6 +112,9 @@ runs/run_20260829_233045/
         levers.json                            # bases, rates, potentials, narrative
     12_executive_summary/
         summary.json                           # the six tabs, and the questions for the business
+    13_export/
+        report.xlsx                            # one sheet per section and per figure, plus the data
+        report.html                            # the same report as one self-contained file
 ```
 
 Inserting a stage renumbers the ones after it, so runs written earlier keep their old numbers on

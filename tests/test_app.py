@@ -435,7 +435,7 @@ def test_summary_page_is_empty_before_it_is_built(run_root):
     assert "No summary yet" in app.info[0].value
 
 
-def test_summary_page_shows_six_tabs(run_root, lever_run):
+def test_summary_page_shows_every_tab(run_root, lever_run):
     from agents.sme_questions import SmeQuestion, SmeQuestionProposal
     from analysis.summary import build_summary
 
@@ -466,6 +466,7 @@ def test_summary_page_shows_six_tabs(run_root, lever_run):
         "Visuals",
         "Open Questions",
         "Ask the Analysis",
+        "Export",
     ]
     # The assumption caveat belongs on the summary too, not only on the detail page:
     # quietly on the overview, prominently above the top levers.
@@ -474,3 +475,7 @@ def test_summary_page_shows_six_tabs(run_root, lever_run):
     # The overview shows figures and tables, not only bullet points.
     assert len(app.metric) > 4
     assert app.dataframe
+    # Nothing is generated until it is asked for: a nine megabyte workbook nobody
+    # wanted would be built on every visit.
+    assert "Build both" in [button.label for button in app.button]
+    assert not app.download_button
