@@ -12,6 +12,15 @@ description.
 """
 
 from dataclasses import dataclass
+from typing import Literal
+
+# What a field is for, which decides how its absence is treated.
+#
+#   core      nothing works without it -- absence is a serious finding
+#   standard  usually present, carries the main analyses
+#   extended  unlocks a specific lever when present; absent is normal and is
+#             reported at the lever it blocks, not as a data quality problem
+FieldTier = Literal["core", "standard", "extended"]
 
 
 @dataclass(frozen=True)
@@ -19,7 +28,11 @@ class CanonicalField:
     key: str
     label: str
     description: str
-    required: bool
+    tier: FieldTier
+
+    @property
+    def required(self) -> bool:
+        return self.tier == "core"
 
 
 CANONICAL_FIELDS = (
@@ -30,7 +43,7 @@ CANONICAL_FIELDS = (
         "transaction, such as a company code or operating unit. If the export "
         "identifies companies only by name and carries no code, map that column "
         "here instead.",
-        required=True,
+        tier="core",
     ),
     CanonicalField(
         "company_name",
@@ -38,21 +51,21 @@ CANONICAL_FIELDS = (
         "Readable name of the portfolio company, where the export carries one in "
         "addition to a code. Leave empty if the only company column has already "
         "been mapped to company.",
-        required=False,
+        tier="standard",
     ),
     CanonicalField(
         "supplier",
         "Supplier",
         "Name of the vendor or supplier being paid. ERP systems call this vendor, "
         "supplier name, creditor or business partner.",
-        required=True,
+        tier="core",
     ),
     CanonicalField(
         "supplier_id",
         "Supplier ID",
         "Stable identifier of the supplier in the source system, such as a vendor "
         "number or partner id. Usually numeric and often zero-padded.",
-        required=False,
+        tier="standard",
     ),
     CanonicalField(
         "amount_local",
@@ -60,73 +73,73 @@ CANONICAL_FIELDS = (
         "Transaction amount in the currency of the document itself. If the export "
         "has several amount columns, this is the one that belongs with the local "
         "currency column.",
-        required=True,
+        tier="core",
     ),
     CanonicalField(
         "amount_group",
         "Group Amount",
         "The same amount already converted into the group reporting currency. Map "
         "this only if the export genuinely provides a second, converted amount.",
-        required=False,
+        tier="standard",
     ),
     CanonicalField(
         "currency",
         "Currency",
         "Currency of the local amount, typically a three-letter ISO code such as "
         "EUR or USD.",
-        required=True,
+        tier="core",
     ),
     CanonicalField(
         "posting_date",
         "Posting Date",
         "Date the transaction was posted to the ledger. If the export has both a "
         "posting and a document date, this is the ledger one.",
-        required=True,
+        tier="core",
     ),
     CanonicalField(
         "document_date",
         "Document Date",
         "Date printed on the invoice or source document, which can differ from the "
         "posting date.",
-        required=False,
+        tier="standard",
     ),
     CanonicalField(
         "invoice_number",
         "Invoice Number",
         "Invoice or accounting document number identifying the transaction.",
-        required=False,
+        tier="standard",
     ),
     CanonicalField(
         "purchase_order",
         "Purchase Order",
         "Purchase order or purchasing document reference, where the transaction "
         "has one. Often empty for a large share of rows.",
-        required=False,
+        tier="standard",
     ),
     CanonicalField(
         "gl_account",
         "GL Account",
         "General ledger account number the cost was booked to.",
-        required=False,
+        tier="standard",
     ),
     CanonicalField(
         "gl_description",
         "GL Description",
         "Text describing the GL account. This is accounting language such as "
         "'Consulting expenses' or 'Freight costs', not a procurement category.",
-        required=False,
+        tier="standard",
     ),
     CanonicalField(
         "cost_center",
         "Cost Center",
         "Cost center the spend was allocated to.",
-        required=False,
+        tier="standard",
     ),
     CanonicalField(
         "profit_center",
         "Profit Center",
         "Profit center the spend was allocated to.",
-        required=False,
+        tier="standard",
     ),
     CanonicalField(
         "category",
@@ -135,11 +148,73 @@ CANONICAL_FIELDS = (
         "Logistics, IT Services or Facility Management. Map a column here only if "
         "it genuinely classifies the purchase. If the column is really the text of "
         "the GL account, map it to gl_description and leave this one empty.",
-        required=False,
+        tier="standard",
+    ),
+    # --- extended: present only in richer exports, each unlocking a lever ---
+    CanonicalField(
+        "item_code",
+        "Item Code",
+        "Article, material or service number identifying *what* was bought, as "
+        "opposed to who sold it. The key that lets the same item be compared "
+        "across companies. Not the document or order number.",
+        tier="extended",
+    ),
+    CanonicalField(
+        "quantity",
+        "Quantity",
+        "How many units the line covers. A count of goods or hours, never an "
+        "amount of money and never a document number.",
+        tier="extended",
+    ),
+    CanonicalField(
+        "unit_price",
+        "Unit Price",
+        "Price for a single unit, where the export states it separately from the "
+        "line total. Map only a genuine per-unit price, not the line amount.",
+        tier="extended",
+    ),
+    CanonicalField(
+        "unit_of_measure",
+        "Unit of Measure",
+        "The unit the quantity is counted in, such as PC, KG, HOUR or LITRE. "
+        "Without it two quantities cannot be compared.",
+        tier="extended",
+    ),
+    CanonicalField(
+        "payment_terms",
+        "Payment Terms",
+        "The agreed terms of payment, such as 'NET30' or '2/10 net 30'. A term, "
+        "not a date.",
+        tier="extended",
+    ),
+    CanonicalField(
+        "contract_id",
+        "Contract ID",
+        "Reference to the contract or framework agreement the transaction falls "
+        "under. Distinct from the purchase order, which covers a single order.",
+        tier="extended",
+    ),
+    CanonicalField(
+        "contract_end_date",
+        "Contract End Date",
+        "When the governing contract expires. Only map a contract validity date, "
+        "never the posting or document date.",
+        tier="extended",
+    ),
+    CanonicalField(
+        "delivery_location",
+        "Delivery Location",
+        "Where the goods or services were delivered: plant, site or ship-to "
+        "address. Not the cost center and not the company.",
+        tier="extended",
     ),
 )
 
 CANONICAL_KEYS = frozenset(field.key for field in CANONICAL_FIELDS)
+FIELDS_BY_TIER = {
+    tier: tuple(field for field in CANONICAL_FIELDS if field.tier == tier)
+    for tier in ("core", "standard", "extended")
+}
 
 _BY_KEY = {field.key: field for field in CANONICAL_FIELDS}
 

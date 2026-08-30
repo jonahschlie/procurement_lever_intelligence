@@ -172,7 +172,7 @@ def test_log_reports_the_mapping(run_root, sap_csv):
 
     log = (run_path(run_id) / "logs" / "run.log").read_text(encoding="utf-8")
     assert "8 column(s) sent to the agent" in log
-    assert "8 of 16 canonical fields matched" in log
+    assert "8 of 24 canonical fields matched" in log
     assert log.count("schema mapping complete: 1 dataset(s)") == 1
 
 

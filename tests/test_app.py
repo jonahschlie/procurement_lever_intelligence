@@ -211,7 +211,7 @@ def test_canonical_table_page_reports_what_was_built(run_root, portfolio_xlsx):
     app = _page("canonical_table", run_id=run_id)
 
     assert not app.exception
-    assert [metric.value for metric in app.metric] == ["5", "29", "1"]
+    assert [metric.value for metric in app.metric] == ["5", "37", "1"]
 
     contributions, preview = (element.value for element in app.dataframe)
     assert contributions.loc[0, "Source"] == "portfolio.xlsx"

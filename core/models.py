@@ -355,12 +355,27 @@ class LeverContributor(BaseModel):
     contract_status: str
 
 
+LeverStatus = Literal["quantified", "not_applicable", "not_assessable"]
+LeverKind = Literal["saving", "recovery", "risk"]
+
+
 class LeverResult(BaseModel):
-    """One lever: what it is worth, on what basis, and on which rows."""
+    """One lever: whether it applies here, what it is worth, and on which rows.
+
+    A zero base means two very different things -- tested and found nothing, or
+    could not be tested at all -- so the status carries that distinction rather
+    than leaving a reader to guess from a zero.
+    """
 
     lever_id: str
     name: str
     mechanism: str
+    status: LeverStatus = "quantified"
+    status_reason: str = ""
+    kind: LeverKind = "saving"
+    required_fields: list[str] = []
+    missing_fields: list[str] = []
+    metric: str = ""
     gross_base: float
     net_base: float
     rows: int
@@ -389,9 +404,18 @@ class CompanyBenchmark(BaseModel):
     uncontracted_share: float
 
 
+class DataRequest(BaseModel):
+    """A canonical field worth asking the portfolio company for, and why."""
+
+    field: str
+    label: str
+    unlocks: list[str]
+
+
 class LeverArtifact(BaseModel):
     addressable_spend: float
     levers: list[LeverResult]
+    data_requests: list[DataRequest] = []
     total_low: float
     total_base: float
     total_high: float

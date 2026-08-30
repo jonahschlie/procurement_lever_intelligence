@@ -29,9 +29,10 @@ Everything requiring judgement is gathered on one **Review & Confirm** screen; e
 appears afterwards in one **Data Quality Report**, which ends in the chain from gross spend to
 addressable spend.
 
-8. **Levers** — four quantified levers with a saving range each, every euro credited to exactly
-   one of them, priority computed from impact, effort and confidence, and each figure traceable
-   back to the bookings behind it.
+8. **Levers** — a fixed catalogue of fifteen standard procurement levers tested against the data.
+   Those the data supports are quantified with a saving range, every euro credited to exactly one
+   of them and traceable back to its bookings. Those it does not support say why — either measured
+   and empty, or missing a field, which produces the request list for the next data ask.
 
 The management summary and the remaining analytical views follow.
 

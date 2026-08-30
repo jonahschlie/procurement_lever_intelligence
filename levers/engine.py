@@ -22,9 +22,11 @@ import pandas as pd
 
 from agents.base import run_agent
 from agents.lever_reasoning import build_input, definition
+from core.canonical import field_by_key
 from core.config import EFFORT_COMPANIES, EFFORT_SUPPLIERS, LEVER_PRECEDENCE
 from core.models import (
     CompanyBenchmark,
+    DataRequest,
     LeverArtifact,
     LeverContributor,
     LeverResult,
@@ -32,7 +34,7 @@ from core.models import (
 )
 from core.run import get_logger, record_step, step_path
 from core.table import load_table, write_table
-from levers.definitions import BY_ID, LEVERS
+from levers.definitions import BY_ID, LEVERS, SPEND_KINDS
 
 STEP = "levers"
 ARTIFACT_NAME = "levers.json"
@@ -41,30 +43,94 @@ MAX_CONTRIBUTORS = 5
 PRIMARY_COLUMN = "lever_primary"
 UNASSIGNED = ""
 
+_STATUS_RANK = {"quantified": 0, "not_applicable": 1, "not_assessable": 2}
+
+
+def assess(lever, rows: pd.DataFrame) -> tuple[str, str, list[str]]:
+    """Can this lever be measured here, and if not, what is missing.
+
+    A zero base is ambiguous on its own: it can mean the data was checked and held
+    nothing, or that it could never be checked. The two call for opposite
+    responses -- accept the result, or ask for more data -- so they are separated
+    before any measuring happens.
+    """
+    missing = _missing_fields(lever, rows)
+    if missing is not None:
+        labels = ", ".join(field_by_key(key).label for key in missing)
+        return (
+            "not_assessable",
+            f"The submission carries no {labels}, which this lever is measured from.",
+            missing,
+        )
+    if lever.unavailable_reason:
+        return "not_assessable", lever.unavailable_reason, []
+    if lever.membership is None:
+        return "not_assessable", "No measurement is defined for this lever.", []
+    return "quantified", "", []
+
+
+def _missing_fields(lever, rows: pd.DataFrame) -> list[str] | None:
+    """The gap in the closest requirement, or None when one is satisfied."""
+    if not lever.requires:
+        return None
+    gaps = [sorted(option - _available(rows, option)) for option in lever.requires]
+    closest = min(gaps, key=len)
+    return None if not closest else closest
+
+
+def _available(rows: pd.DataFrame, keys: set[str]) -> set[str]:
+    """Fields that exist and actually carry something."""
+    present = set()
+    for key in keys:
+        if key in rows.columns and (rows[key].astype(str).str.strip() != "").any():
+            present.add(key)
+    return present
+
+
+def _data_requests(results: list[LeverResult]) -> list[DataRequest]:
+    """What to ask the portfolio company for, and which levers it would unlock."""
+    unlocks: dict[str, list[str]] = {}
+    for result in results:
+        for key in result.missing_fields:
+            unlocks.setdefault(key, []).append(result.name)
+    return [
+        DataRequest(field=key, label=field_by_key(key).label, unlocks=sorted(levers))
+        for key, levers in sorted(unlocks.items())
+    ]
+
 
 def run_levers(run_id: str, *, client=None) -> LeverArtifact:
     logger = get_logger(run_id)
     table = load_table(run_id)
     rows = _addressable(table)
 
-    memberships = {lever.lever_id: lever.membership(rows) for lever in LEVERS}
-    primary = _assign_primary(rows, memberships)
+    assessments = {lever.lever_id: assess(lever, rows) for lever in LEVERS}
+    memberships = {
+        lever.lever_id: lever.membership(rows)
+        for lever in LEVERS
+        if lever.membership is not None and assessments[lever.lever_id][0] != "not_assessable"
+    }
+    # Only spend levers claim euros; a risk figure is an exposure, not a potential.
+    primary = _assign_primary(
+        rows, {k: v for k, v in memberships.items() if BY_ID[k].kind in SPEND_KINDS}
+    )
 
     addressable = float(rows["amount_eur"].sum())
     results = [
-        _measure(lever, rows, memberships[lever.lever_id], primary)
+        _measure(lever, rows, memberships.get(lever.lever_id), primary, *assessments[lever.lever_id])
         for lever in LEVERS
     ]
-    results.sort(key=lambda r: (-r.potential_base, _EFFORT_RANK[r.effort]))
+    results.sort(key=lambda r: (_STATUS_RANK[r.status], -r.potential_base, _EFFORT_RANK[r.effort]))
 
-    benchmark = _benchmark(rows)
+    counted = [r for r in results if r.kind in SPEND_KINDS and r.status == "quantified"]
     artifact = LeverArtifact(
         addressable_spend=addressable,
         levers=results,
-        total_low=sum(r.potential_low for r in results),
-        total_base=sum(r.potential_base for r in results),
-        total_high=sum(r.potential_high for r in results),
-        benchmark=benchmark,
+        total_low=sum(r.potential_low for r in counted),
+        total_base=sum(r.potential_base for r in counted),
+        total_high=sum(r.potential_high for r in counted),
+        benchmark=_benchmark(rows),
+        data_requests=_data_requests(results),
     )
     artifact = _add_narrative(artifact, client, logger)
 
@@ -107,22 +173,68 @@ def _assign_primary(rows: pd.DataFrame, memberships: dict[str, pd.Series]) -> pd
     return primary
 
 
-def _measure(lever, rows, member: pd.Series, primary: pd.Series) -> LeverResult:
+def _measure(lever, rows, member, primary, status, reason, missing) -> LeverResult:
+    if member is None:
+        return LeverResult(
+            lever_id=lever.lever_id,
+            name=lever.name,
+            mechanism=lever.mechanism,
+            status=status,
+            status_reason=reason,
+            kind=lever.kind,
+            required_fields=sorted(set().union(*lever.requires)) if lever.requires else [],
+            missing_fields=missing,
+            gross_base=0.0,
+            net_base=0.0,
+            rows=0,
+            suppliers=0,
+            companies=0,
+            rate_low=0.0,
+            rate_base=0.0,
+            rate_high=0.0,
+            potential_low=0.0,
+            potential_base=0.0,
+            potential_high=0.0,
+            effort="low",
+            effort_reason="Not measured.",
+            confidence=lever.confidence or "low",
+            confidence_reason=lever.confidence_reason,
+            contributors=[],
+        )
+
     gross_rows = rows[member]
     net_rows = rows[primary == lever.lever_id]
 
     gross = float(gross_rows["amount_eur"].sum())
     net = float(net_rows["amount_eur"].sum())
-    low, base, high = lever.rates
 
     suppliers = int(gross_rows["supplier_normalized"].nunique())
     companies = int(gross_rows["company_name"].nunique())
     effort, effort_reason = _effort(suppliers, companies)
 
+    # A risk lever reports its exposure through gross_base and metric. It claims
+    # no euros, so its net base stays zero and the invariant "net bases sum to the
+    # addressable spend" holds across the whole catalogue.
+    if lever.kind == "risk":
+        net = 0.0
+        low = base = high = 0.0
+    else:
+        low, base, high = lever.rates
+
+    if gross == 0:
+        status = "not_applicable"
+        reason = "Measured against the data; no spend qualifies for this lever."
+
     return LeverResult(
         lever_id=lever.lever_id,
         name=lever.name,
         mechanism=lever.mechanism,
+        status=status,
+        status_reason=reason,
+        kind=lever.kind,
+        required_fields=sorted(set().union(*lever.requires)) if lever.requires else [],
+        missing_fields=missing,
+        metric=_metric(lever, gross_rows, gross, rows),
         gross_base=gross,
         net_base=net,
         rows=int(len(gross_rows)),
@@ -160,6 +272,20 @@ def _band(value: int, thresholds: tuple[int, int]) -> str:
     if value <= low:
         return "low"
     return "medium" if value <= medium else "high"
+
+
+def _metric(lever, gross_rows: pd.DataFrame, gross: float, rows: pd.DataFrame) -> str:
+    """A one-line figure for levers whose point is not a saving."""
+    if lever.kind != "risk" or gross_rows.empty:
+        return ""
+    total = rows["amount_eur"].sum() or 1
+    if lever.lever_id == "supplier_dependency":
+        names = gross_rows["supplier_normalized"].nunique()
+        return f"{names} supplier(s) hold {gross / total:.1%} of addressable spend"
+    return (
+        f"{gross:,.0f} EUR ({gross / total:.1%}) in "
+        f"{gross_rows['currency'].nunique()} foreign currencies"
+    )
 
 
 def _contributors(rows: pd.DataFrame) -> list[LeverContributor]:
@@ -233,6 +359,7 @@ def _add_narrative(artifact: LeverArtifact, client, logger) -> LeverArtifact:
             ],
         }
         for lever in artifact.levers
+        if lever.status == "quantified" and lever.kind in SPEND_KINDS
     ]
     benchmark = [
         {

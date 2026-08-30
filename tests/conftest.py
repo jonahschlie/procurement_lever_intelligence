@@ -120,7 +120,10 @@ def defective_table() -> pd.DataFrame:
 
     records = []
     for index, row in enumerate(_DEFECTIVE_ROWS):
-        record = dict(zip(_COLUMN_ORDER, row))
+        # Start from every canonical column so the fixture keeps working as the
+        # schema grows; the ones this fixture cares about are filled below.
+        record = {column: "" for column in BASE_COLUMNS}
+        record.update(zip(_COLUMN_ORDER, row))
         record.update(
             dataset_id="01_export",
             source_file="export.csv",

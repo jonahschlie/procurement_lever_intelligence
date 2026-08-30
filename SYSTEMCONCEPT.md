@@ -174,6 +174,7 @@ Dashboard
 | Intercompany and Addressability | 11 | built |
 | Canonical Spend Cube | 14 | open |
 | Lever Quantification and Reasoning | 16.1 | built |
+| Lever Catalogue and Data Requests | 16.1 | built |
 | Analytical Views and AI Reasoning | 15, 17–19 | open |
 
 ---
@@ -355,6 +356,26 @@ The proposal and the confirmation are stored as separate artifacts, and each fie
 
 After schema mapping, every dataset follows exactly the same structure.
 
+## Field tiers
+
+The schema is the gate: the mapping agent looks only for fields defined here, so a
+field absent from it never becomes canonical. It survives as an `extra_` column,
+but under whatever name the submission used, untyped, and unusable by any generic
+rule. Fields that later levers need must therefore be declared **before** the first
+export is read.
+
+| Tier | Meaning | Treatment when missing |
+| --- | --- | --- |
+| **core** | Nothing works without it | Serious quality finding |
+| **standard** | Usually present, carries the main analyses | Ordinary quality finding |
+| **extended** | Unlocks a specific lever when present | **No finding.** Reported at the lever it blocks |
+
+The tiers exist for a measured reason. Adding eight extended fields would have
+turned 14 completeness findings into 21, the additional ones almost all noise: a
+submission without quantities is not a submission with a data quality problem. Their
+absence belongs where it can be acted on -- next to the lever it prevents, and in
+the request list for the next data ask.
+
 | Key | Field | Required | Meaning |
 |---|---|---|---|
 | `company` | Company | yes | Identifier of the portfolio company, typically a company code |
@@ -380,6 +401,10 @@ Two distinctions the schema deliberately makes, because exports routinely carry 
 - **`category` versus `gl_description`** — a GL description is accounting language for an account (`Freight costs`); a procurement category classifies the purchase (`Logistics`). Mapping one column to both would defeat the semantic check in section 10.3.
 
 From this point onwards, the remaining pipeline is ERP-independent.
+
+The extended tier holds `item_code`, `quantity`, `unit_price`, `unit_of_measure`,
+`payment_terms`, `contract_id`, `contract_end_date` and `delivery_location`. None
+appear in every export; each is what one or more levers is measured from.
 
 ---
 
@@ -1170,10 +1195,34 @@ Potential
 Naming a lever is not enough; it has to carry a number a decision-maker can weigh,
 and that number has to survive being questioned.
 
+## A fixed catalogue, tested against the data
+
+The levers are the standard set that procurement work in private equity turns on.
+The catalogue does not change between companies; what changes is which of them the
+data can support. Every lever therefore declares the canonical fields it is measured
+from, as **alternative combinations** rather than one list -- price harmonisation
+works from item code plus quantity plus amount, or from item code plus a stated unit
+price, and insisting on one form would report a gap where none exists.
+
+Each lever ends in one of three states:
+
+| State | Meaning |
+| --- | --- |
+| `quantified` | Measured, and there is something there |
+| `not_applicable` | Measurable, measured, and there is nothing there |
+| `not_assessable` | Could not be measured: a field is missing, or its content cannot carry the lever |
+
+The last two are opposites in practice. "All suppliers have contracts" is a result;
+"no contract data was supplied" is a gap in the request. Before this distinction
+existed both produced a base of zero and were indistinguishable.
+
+Levers that cannot be assessed produce the **data request list**: which fields to
+ask the portfolio company for, and which levers each would unlock.
+
 ## What is derivable, and what is not
 
-From a booking-level export the platform quantifies four levers. The limit is the
-data, not the analysis:
+From a booking-level export the platform quantifies five levers and reports two
+exposures. The limit is the data, not the analysis:
 
 | Lever | Base measured on a real submission |
 | --- | --- |
@@ -1181,6 +1230,17 @@ data, not the analysis:
 | Contract Coverage | Spend with suppliers the master lists without a contract |
 | Maverick / Process Compliance | No purchase order **and** supplier absent from the master |
 | Tail Spend | Suppliers each below a small share, carrying many small bookings |
+| Duplicate Payments | Bookings identical on five fields — recoverable cash rather than negotiation |
+
+Two further levers are reported as **exposures, deliberately outside the savings
+total**: supplier dependency and currency exposure. Both are real findings for an
+investor; neither is a saving to be booked, and adding them would inflate the
+number.
+
+**Duplicate payments count the excess, not the flag.** The duplicate rule marks
+every row of a group, but one booking per group is legitimate. On real data 424
+flagged rows formed 212 pairs: the recoverable amount is 3,188,054 EUR, exactly half
+of the 6,376,108 the flag sums to. Taking the flagged sum would double the lever.
 
 Portfolio Benchmark is reported as a **diagnostic rather than a fifth pot**: the
 action it implies — transfer what the best company does — *is* the other levers,

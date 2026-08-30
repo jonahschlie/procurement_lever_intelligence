@@ -176,16 +176,26 @@ _SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2, "info": 3}
 def _completeness(table: pd.DataFrame) -> list[Finding]:
     findings = []
     for field in CANONICAL_FIELDS:
+        if field.key not in table.columns:
+            continue
         values = table[field.key].astype(str).str.strip()
         missing = int((values == "").sum())
         if not missing:
             continue
         ratio = missing / len(table)
+
+        severity = _missing_severity(field.tier, ratio)
+        if severity is None:
+            # An extended field that is simply not in this submission. Its absence
+            # is reported where it matters -- at the lever it blocks -- rather than
+            # as a quality problem that nobody can act on.
+            continue
+
         findings.append(
             Finding(
                 check=f"Missing {field.label}",
                 category="completeness",
-                severity=_missing_severity(field.required, ratio),
+                severity=severity,
                 result=f"{ratio:.1%} ({missing:,} rows)",
                 affected_rows=missing,
                 detail=(
@@ -198,10 +208,17 @@ def _completeness(table: pd.DataFrame) -> list[Finding]:
     return findings
 
 
-def _missing_severity(required: bool, ratio: float) -> str:
-    if required:
+def _missing_severity(tier: str, ratio: float) -> str | None:
+    """How much a gap matters, which depends on what the field is for.
+
+    Returns None when the gap is not worth reporting at all.
+    """
+    if tier == "core":
         return "high" if ratio >= MISSING_HIGH_RATIO else "medium"
-    return "medium" if ratio == 1.0 else "low"
+    if tier == "standard":
+        return "medium" if ratio == 1.0 else "low"
+    # extended: absent entirely is normal, partially present is worth knowing.
+    return None if ratio == 1.0 else "info"
 
 
 def _consistency(

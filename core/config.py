@@ -62,6 +62,9 @@ INTERCOMPANY_STEM_SHARE = 0.5
 # they can be replaced with a firm's own benchmarks without touching logic, and
 # the UI shows every rate next to the figure it produced.
 LEVER_RATES = {
+    # Recovery rather than negotiation, so the rates are higher: the money was
+    # already paid and is claimed back.
+    "duplicate_payments": (0.20, 0.40, 0.60),
     "supplier_consolidation": (0.02, 0.04, 0.07),
     "contract_coverage": (0.01, 0.03, 0.05),
     "maverick": (0.02, 0.05, 0.10),
@@ -71,7 +74,16 @@ LEVER_RATES = {
 # Which lever claims a euro when several apply. Ordered by how specific the
 # population is -- a property of the data rather than of the assumed rates.
 # Ordering by rate instead would maximise the total and bias it optimistic.
-LEVER_PRECEDENCE = ("tail_spend", "maverick", "contract_coverage", "supplier_consolidation")
+LEVER_PRECEDENCE = (
+    "duplicate_payments",
+    "tail_spend",
+    "maverick",
+    "contract_coverage",
+    "supplier_consolidation",
+)
+
+# A supplier above this share of addressable spend is a dependency worth naming.
+SUPPLIER_DEPENDENCY_THRESHOLD = 0.10
 
 # A supplier below this share of addressable spend counts as tail.
 TAIL_SPEND_THRESHOLD = 0.01

@@ -28,15 +28,23 @@ def render() -> None:
     artifact = load_artifact(run_id)
     table = load_table(run_id)
 
-    _headline(artifact)
-    _priority(artifact)
-    for rank, lever in enumerate(artifact.levers, start=1):
+    quantified = [l for l in artifact.levers if l.status == "quantified" and l.kind != "risk"]
+    risks = [l for l in artifact.levers if l.status == "quantified" and l.kind == "risk"]
+    absent = [l for l in artifact.levers if l.status == "not_applicable"]
+    blocked = [l for l in artifact.levers if l.status == "not_assessable"]
+
+    _headline(artifact, len(quantified), len(artifact.levers))
+    _priority(artifact, quantified)
+    for rank, lever in enumerate(quantified, start=1):
         _lever(rank, lever, table)
+    _risks(risks)
+    _absent(absent)
+    _blocked(blocked, artifact)
     _benchmark(artifact)
     _assumptions(artifact)
 
 
-def _headline(artifact) -> None:
+def _headline(artifact, found: int, total: int) -> None:
     left, middle, right = st.columns(3)
     left.metric("Potential — low", f"{artifact.total_low:,.0f}")
     middle.metric("Potential — base", f"{artifact.total_base:,.0f}")
@@ -44,7 +52,9 @@ def _headline(artifact) -> None:
     base = artifact.total_base / artifact.addressable_spend if artifact.addressable_spend else 0
     st.caption(
         f"EUR, against {artifact.addressable_spend:,.0f} of addressable spend "
-        f"({base:.1%} in the base case). Every euro counts towards one lever only."
+        f"({base:.1%} in the base case). Every euro counts towards one lever only. "
+        f"{found} of {total} levers in the standard catalogue are quantified here; "
+        "the rest are listed below with the reason."
     )
     st.warning(
         "**The saving percentages are assumptions, not findings.** They are practitioner "
@@ -54,7 +64,7 @@ def _headline(artifact) -> None:
     )
 
 
-def _priority(artifact) -> None:
+def _priority(artifact, quantified) -> None:
     st.subheader("Priority")
     st.dataframe(
         pd.DataFrame(
@@ -68,7 +78,7 @@ def _priority(artifact) -> None:
                     "Effort": f"{LEVEL_ICON[lever.effort]} {lever.effort}",
                     "Confidence": f"{CONFIDENCE_ICON[lever.confidence]} {lever.confidence}",
                 }
-                for rank, lever in enumerate(artifact.levers, start=1)
+                for rank, lever in enumerate(quantified, start=1)
             ]
         ),
         width="stretch",
@@ -79,7 +89,7 @@ def _priority(artifact) -> None:
     if artifact.priority_rationale:
         st.markdown(artifact.priority_rationale)
 
-    ranked = [lever.lever_id for lever in artifact.levers]
+    ranked = [lever.lever_id for lever in quantified]
     if artifact.agent_order and artifact.agent_order != ranked:
         with st.expander("The agent would tackle them in a different order"):
             st.markdown(
@@ -193,6 +203,76 @@ def _bookings(lever, table: pd.DataFrame) -> None:
     )
     if len(rows) > 200:
         st.caption(f"Showing the 200 largest of {len(rows):,} bookings.")
+
+
+def _risks(levers) -> None:
+    if not levers:
+        return
+    st.subheader("Risk exposures")
+    st.caption(
+        "Measured like the levers above, but deliberately **not** added to the "
+        "potential: an exposure is something to manage, not a saving to book."
+    )
+    for lever in levers:
+        st.markdown(f"**{lever.name}** — {lever.metric}")
+        st.caption(lever.mechanism)
+
+
+def _absent(levers) -> None:
+    if not levers:
+        return
+    st.subheader("Checked, nothing found")
+    st.caption("These levers were measurable against the data and turned up nothing.")
+    st.dataframe(
+        pd.DataFrame(
+            [{"Lever": l.name, "Why": l.status_reason} for l in levers]
+        ),
+        width="stretch",
+        hide_index=True,
+    )
+
+
+def _blocked(levers, artifact) -> None:
+    if not levers:
+        return
+    st.subheader("Not assessable from this data")
+    st.caption(
+        "Part of the standard catalogue, but this submission does not carry what "
+        "they are measured from. Listed so a zero is never mistaken for an absence "
+        "of opportunity."
+    )
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Lever": l.name,
+                    "What it would find": l.mechanism,
+                    "Why not": l.status_reason,
+                }
+                for l in levers
+            ]
+        ),
+        width="stretch",
+        hide_index=True,
+    )
+
+    if artifact.data_requests:
+        st.markdown("**What to ask the portfolio company for**")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {"Field": r.label, "Would unlock": ", ".join(r.unlocks)}
+                    for r in artifact.data_requests
+                ]
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+        st.caption(
+            "Each of these is a canonical field the mapping already looks for. "
+            "Supplying it in the next data request turns the lever above into a "
+            "measured figure."
+        )
 
 
 def _benchmark(artifact) -> None:
