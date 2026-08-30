@@ -824,6 +824,18 @@ A cost type the agent does not judge stays **addressable**: spend excluded by
 nobody's decision would disappear from the analysis unnoticed, whereas spend wrongly
 included merely gets examined and dismissed.
 
+**Cost types the agent was unsure about are named above the table, not left in it.**
+Observed across two runs of the same submission: `MANAGEMENT FEES` was called
+addressable at confidence 0.40 in one and not addressable at 0.85 in the next,
+moving addressable spend by 3.06m EUR -- 2.7%. The review table sorts by spend
+rather than by confidence, so the one case worth a second look sat in the middle of
+twenty-four rows. It is now stated up front with its spend, its verdict and its
+confidence, using the same threshold the schema mapping uses for the same purpose.
+
+The hedged answer was the better one, incidentally: intercompany detection found
+only 202k of those fees to be internal, and the remaining 3.06m goes to the same
+third parties that appear in every other cost type.
+
 Measured: 12.4m EUR of 127.6m third party spend, leaving 115.2m addressable.
 
 ## Analysable Spend
@@ -1100,6 +1112,11 @@ Executive Summary screen, the workbook and the HTML file each only decide how to
 draw that. Assembled separately they would agree today and diverge at the first
 new chart, which is why the screen's Visuals tab renders the same list the exports
 do rather than a parallel one.
+
+The control sits beside the Executive Summary title rather than inside a tab, so
+it is reachable wherever the reader is, and the built files are held for the run:
+a download button re-runs the script, and a control that rebuilt itself each time
+would hand over the first file and lose the second.
 
 **Excel — for the reader who carries on calculating.** One sheet per section, one
 per figure, and the canonical table twice: the business fields, and all of them

@@ -44,7 +44,8 @@ levers are measured against.
     full catalogue, the spend chain and supplier share drawn, the open data and business questions,
     and a chat grounded in this run's figures.
 
-12. **Export** — the same material as a workbook and as a single HTML file. The workbook carries
+12. **Export** — beside the Executive Summary title, reachable from any tab: the same material
+    as a workbook and as a single HTML file. The workbook carries
     native charts bound to their data and the canonical table twice, business fields and all of
     them; amounts are numbers, so it pivots. The HTML file looks and behaves like the summary tabs
     and embeds its chart runtime, so it opens with the network switched off. Both are built on

@@ -31,7 +31,8 @@ from suppliers.normalization import (
     name_volumes,
 )
 from transform.rule_engine import run_rule_engine
-from ui.format import as_money, money, rate as rate_column
+from core.config import CONFIDENCE_THRESHOLD
+from ui.format import as_money, eur, money, rate as rate_column
 
 
 def render() -> None:
@@ -385,6 +386,23 @@ def _addressability(run_id: str) -> dict[str, bool]:
         "Payroll, taxes, interest and provisions sit in the same ledger as consulting and "
         "freight, but procurement cannot negotiate them. Untick what it cannot influence."
     )
+
+    # One hedged answer here moves the addressable figure by millions, and the
+    # table sorts by spend rather than by how sure the agent was. Named up front,
+    # the cases worth a second look cannot be scrolled past.
+    unsure = [c for c in artifact.cost_types if c.confidence < CONFIDENCE_THRESHOLD]
+    if unsure:
+        st.warning(
+            f"**{len(unsure)} cost type(s) the agent was unsure about, together "
+            f"{eur(sum(c.spend for c in unsure))} EUR.** "
+            + " · ".join(
+                f"{c.cost_type} ({eur(c.spend)}, "
+                f"{'addressable' if c.addressable else 'not addressable'}, "
+                f"confidence {c.confidence:.2f})"
+                for c in sorted(unsure, key=lambda c: -c.spend)
+            )
+        )
+
     edited = st.data_editor(
         as_money(
             pd.DataFrame(

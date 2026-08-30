@@ -26,6 +26,12 @@ ASSUMPTION_NOTE = (
     "data; only the rate is assumed."
 )
 
+EXPORT_HELP = (
+    "A workbook with every section as a sheet, charts bound to their data and the "
+    "canonical table twice — amounts are numbers, so it pivots. And one HTML file "
+    "that looks and behaves like these tabs and opens without a network."
+)
+
 STARTER_QUESTIONS = (
     "What are the three biggest opportunities and why?",
     "Why is the category analysis switched off?",
@@ -34,10 +40,16 @@ STARTER_QUESTIONS = (
 
 
 def render() -> None:
-    st.title("Executive Summary")
-
     run_id = st.session_state.get("run_id")
-    if run_id is None or not has_summary(run_id):
+    ready = run_id is not None and has_summary(run_id)
+
+    heading, action = st.columns([4, 1], vertical_alignment="bottom")
+    heading.title("Executive Summary")
+    if ready:
+        with action:
+            _export(run_id)
+
+    if not ready:
         st.info("No summary yet. Identify the levers first, then build it there.")
         return
 
@@ -45,16 +57,8 @@ def render() -> None:
     table = load_table(run_id) if has_table(run_id) else pd.DataFrame()
     artifact = load_artifact(run_id) if has_artifact(run_id) else None
 
-    overview, top, catalogue, visuals, questions, chat, export = st.tabs(
-        [
-            "Overview",
-            "Top Levers",
-            "All Levers",
-            "Visuals",
-            "Open Questions",
-            "Ask the Analysis",
-            "Export",
-        ]
+    overview, top, catalogue, visuals, questions, chat = st.tabs(
+        ["Overview", "Top Levers", "All Levers", "Visuals", "Open Questions", "Ask the Analysis"]
     )
     with overview:
         _overview(summary, artifact, table)
@@ -68,8 +72,6 @@ def render() -> None:
         _questions(summary, artifact)
     with chat:
         _chat(run_id, table)
-    with export:
-        _export(run_id)
 
 
 def _overview(summary, artifact, table) -> None:
@@ -325,50 +327,47 @@ def _questions(summary, artifact) -> None:
             st.caption(f"Would let us: {entry.unlocks}")
 
 
+EXPORT_STATE = "export_files"
+
+
 def _export(run_id: str) -> None:
-    """Both files, built on request. Neither is worth generating unasked."""
+    """The downloads, beside the title rather than behind a tab.
+
+    The files are kept in session state on purpose. A download button reruns the
+    script, so a control that rebuilt itself on every run would hand over the
+    first file and lose the second.
+    """
     from analysis.report import build_report
     from export.artifacts import build_exports, file_stem
 
-    st.subheader("Take the analysis with you")
-    st.markdown(
-        "- **Workbook** — every section as a sheet, charts bound to their data, and the "
-        "canonical table twice: the business fields, and all of them. Amounts are numbers, "
-        "so it pivots.\n"
-        "- **Report** — one HTML file that looks and behaves like these tabs. The chart "
-        "runtime is embedded, so it works with the network switched off."
-    )
-
-    if not st.button("Build both", type="primary"):
+    ready = st.session_state.get(EXPORT_STATE)
+    if ready is None or ready["run_id"] != run_id:
+        if st.button("Build report", width="stretch", help=EXPORT_HELP):
+            with st.spinner("Building the workbook and the report"):
+                workbook, page = build_exports(run_id)
+            st.session_state[EXPORT_STATE] = {
+                "run_id": run_id,
+                "stem": file_stem(build_report(run_id)),
+                "workbook": workbook,
+                "page": page,
+            }
+            st.rerun()
         return
 
-    with st.status("Building the export", expanded=True) as status:
-        st.write("Assembling the document")
-        stem = file_stem(build_report(run_id))
-        st.write("Writing the workbook and the report")
-        workbook, page = build_exports(run_id)
-        status.update(
-            label=f"Ready — {len(workbook) / 1e6:.1f} MB workbook, "
-            f"{len(page.encode('utf-8')) / 1e6:.1f} MB report",
-            state="complete",
-        )
-
-    left, right = st.columns(2)
-    left.download_button(
-        "Download workbook (.xlsx)",
-        workbook,
-        file_name=f"{stem}.xlsx",
+    st.download_button(
+        "Workbook (.xlsx)",
+        ready["workbook"],
+        file_name=f"{ready['stem']}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         width="stretch",
     )
-    right.download_button(
-        "Download report (.html)",
-        page,
-        file_name=f"{stem}.html",
+    st.download_button(
+        "Report (.html)",
+        ready["page"],
+        file_name=f"{ready['stem']}.html",
         mime="text/html",
         width="stretch",
     )
-    st.caption("Both files are also kept with this run, next to the artifacts they came from.")
 
 
 def _chat(run_id: str, table: pd.DataFrame) -> None:

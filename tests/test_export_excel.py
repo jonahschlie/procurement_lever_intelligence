@@ -169,3 +169,34 @@ def test_the_file_name_says_who_and_when(lever_run):
 
     assert stem.startswith("procurement_levers_")
     assert stem[-8:].isdigit()  # the date, so two exports never collide silently
+
+
+def test_the_downloads_survive_the_rerun_a_download_causes(lever_run, tmp_path):
+    """Clicking a download button reruns the script.
+
+    A control that rebuilt itself each run would hand over the first file and
+    lose the second, so the built files are kept for the run they belong to.
+    """
+    from streamlit.testing.v1 import AppTest
+
+    # The export control only appears once there is a summary to export.
+    build_summary(lever_run, client=FakeClient(SmeQuestionProposal(questions=[])))
+
+    page = tmp_path / "summary_page.py"
+    page.write_text(
+        "import streamlit as st\n"
+        "from ui import summary\n"
+        f"st.session_state['run_id'] = {lever_run!r}\n"
+        "summary.render()\n",
+        encoding="utf-8",
+    )
+    app = AppTest.from_file(str(page), default_timeout=120)
+    app.run()
+
+    next(b for b in app.button if b.label == "Build report").set_value(True)
+    app.run()
+    first = [d.label for d in app.download_button]
+
+    app.run()  # the rerun a download triggers
+    assert [d.label for d in app.download_button] == first
+    assert first == ["Workbook (.xlsx)", "Report (.html)"]

@@ -466,7 +466,6 @@ def test_summary_page_shows_every_tab(run_root, lever_run):
         "Visuals",
         "Open Questions",
         "Ask the Analysis",
-        "Export",
     ]
     # The assumption caveat belongs on the summary too, not only on the detail page:
     # quietly on the overview, prominently above the top levers.
@@ -475,7 +474,57 @@ def test_summary_page_shows_every_tab(run_root, lever_run):
     # The overview shows figures and tables, not only bullet points.
     assert len(app.metric) > 4
     assert app.dataframe
-    # Nothing is generated until it is asked for: a nine megabyte workbook nobody
-    # wanted would be built on every visit.
-    assert "Build both" in [button.label for button in app.button]
+    # The export sits beside the title, so it is reachable from every tab rather
+    # than behind one. Nothing is generated until it is asked for: a nine megabyte
+    # workbook nobody wanted would be built on every visit.
+    assert "Build report" in [button.label for button in app.button]
     assert not app.download_button
+
+
+def test_a_hedged_cost_type_is_named_before_the_table_that_buries_it(run_root, portfolio_xlsx):
+    """One hedged answer here moves the addressable figure by millions.
+
+    The table sorts by spend, not by how sure the agent was, so the case worth a
+    second look would otherwise be scrolled past.
+    """
+    from classification.spend_classification import ARTIFACT_NAME, STEP
+    from core.config import CONFIDENCE_THRESHOLD
+    from core.models import CostTypeClass, SpendClassificationArtifact
+    from core.run import step_path
+
+    run_id = _analysed_run(portfolio_xlsx)
+    artifact = SpendClassificationArtifact(
+        source_column="gl_description",
+        cost_types=[
+            CostTypeClass(
+                cost_type="MANAGEMENT FEES",
+                addressable=True,
+                confidence=CONFIDENCE_THRESHOLD - 0.3,
+                comment="Could be intercompany recharges, but the suppliers look external.",
+                spend=3_260_352.0,
+                rows=412,
+            ),
+            CostTypeClass(
+                cost_type="CONSULTING",
+                addressable=True,
+                confidence=0.9,
+                comment="Bought from third parties under negotiable terms.",
+                spend=1_000_000.0,
+                rows=100,
+            ),
+        ],
+        llm_call=None,
+    )
+    (step_path(run_id, STEP) / ARTIFACT_NAME).write_bytes(
+        artifact.model_dump_json(indent=2).encode("utf-8")
+    )
+
+    app = _page("review", run_id=run_id)
+
+    assert not app.exception
+    warnings = " ".join(w.value for w in app.warning)
+    assert "1 cost type(s) the agent was unsure about" in warnings
+    assert "MANAGEMENT FEES" in warnings
+    assert "3,260,352" in warnings
+    # The one it was sure about is not dragged into the warning.
+    assert "CONSULTING" not in warnings
