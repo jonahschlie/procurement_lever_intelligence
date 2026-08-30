@@ -741,13 +741,35 @@ SA
 
 Original values remain stored.
 
-The proposed grouping is a starting point, not a verdict. Beyond approving,
-rejecting and renaming a group, every raw name can be assigned to a group by hand:
-moving a name between groups, inventing a group that was never proposed, and
-splitting one apart. A group built that way is approved by definition, and inherits
-two things rather than reinventing them — the supplier master entry, because country
-and contract status may only come from there, and the intercompany mark of whichever
-original group contributes the most rows.
+The proposed grouping is a starting point, not a verdict, and the review shows it
+as **one table over every raw name** rather than as a set of group-level decisions.
+
+The reason is arithmetic. Split across a "needs a decision" table, an
+"automatically merged" list and a read-only record of rejected pairs, the supplier
+count in the heading could not be reconciled with anything on screen: on a real
+submission 20 groups covered 69 of 80 names and the remaining 11 appeared nowhere.
+One row per name, with the group as an editable cell, makes every correction the
+same gesture — move a name, invent a group, split one, or overrule a rejection by
+giving both names the same group — and makes the count add up.
+
+Each row carries what decided it (cleanup match, agent, agent unsure, alone) and
+why, including the neighbours the agent judged to be a different supplier. A group
+the agent was not confident about starts ungrouped, so nothing merges on a guess.
+
+A group built by hand is approved by definition. It inherits two things rather than
+reinventing them: the intercompany mark of whichever original group contributes the
+most rows, and the supplier master entry — but only where the group still holds the
+name that matched the master. Split a group and it is no longer known which half the
+master entry described, so country and contract status go back to unknown rather
+than following the wrong half.
+
+**The agent's judgement is not stable across runs, and that is visible.** Measured
+over seven runs of the same submission: the deterministic half never moved (44
+automatic merges, 52 pairs for the agent, every time), while five of those 52 pairs
+got a different verdict depending on the run, swinging the supplier count between 25
+and 27. They sit at similarity 0.76-0.87, where the question -- is "Brokers" a
+different business or the same name written out? -- has no answer in the data.
+Nothing is remembered between runs: each run is judged on its own.
 
 ---
 

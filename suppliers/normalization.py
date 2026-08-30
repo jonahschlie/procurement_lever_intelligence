@@ -226,8 +226,16 @@ def _regroup(
     ordered = sorted(clusters.items(), key=lambda item: -weight(item[1]))
     for sequence, (label, members) in enumerate(ordered, start=1):
         sources = [origin[name] for name in members]
+        # Only where the group still holds the name that matched the master. Split
+        # a group and it is no longer known which half the master entry described,
+        # so country and contract status go back to unknown rather than follow the
+        # wrong half.
         master = next(
-            (group for group in sources if group.master_id),
+            (
+                group
+                for group in sources
+                if group.master_id and group.canonical_name in members
+            ),
             None,
         )
         dominant = max(sources, key=lambda group: weight(group.members))

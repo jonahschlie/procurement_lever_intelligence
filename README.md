@@ -23,9 +23,10 @@ Implemented so far:
    deliberate about the company code: authoritative within an export, and a collision rather than a
    merge when two systems both number their entities from 1000.
 8. **Suppliers and intercompany** — name variants are matched deterministically, the unclear pairs
-   judged by an agent. Every raw name can also be assigned to a group by hand, which is the only
-   way to move a name, invent a group or split one. Suppliers that are the group's own entities are
-   detected from the company names in the data itself and separated out.
+   judged by an agent. The review shows one row per raw name with the group as an editable cell, so
+   moving a name, inventing a group, splitting one and overruling the agent are all the same
+   gesture and the supplier count adds up. Suppliers that are the group's own entities are detected
+   from the company names in the data itself and separated out.
 9. **Addressability** — cost types procurement cannot influence (payroll, tax, financing,
    provisions) are classified once and excluded from the negotiable figure.
 

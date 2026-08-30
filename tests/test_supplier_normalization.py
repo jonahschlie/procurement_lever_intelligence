@@ -301,3 +301,26 @@ def test_an_intercompany_mark_carries_into_the_group_built_by_hand(name_run):
 
     rebuilt = next(g for g in confirmed.groups if "Atlas Frght & Log." in g.members)
     assert rebuilt.is_intercompany
+
+
+def test_a_split_group_does_not_hand_the_master_entry_to_the_wrong_half(name_run, monkeypatch):
+    """Splitting a group loses the knowledge of which half the master described.
+
+    Only the name that actually matched the master keeps its entry; the others go
+    back to unknown rather than inheriting a contract status that may not be theirs.
+    """
+    monkeypatch.setattr(normalization, "_load_master", _master_with_contracts)
+    artifact = run_supplier_normalization(name_run, client=FakeClient(_same()))
+    atlas = next(g for g in artifact.groups if g.master_id == "SUP-1")
+    assert atlas.canonical_name == "Atlas Freight & Logistics"
+
+    # Every member on its own.
+    confirmed = confirm_suppliers(name_run, assignments={m: "" for m in atlas.members})
+
+    by_name = {g.canonical_name: g for g in confirmed.groups}
+    assert by_name["Atlas Freight & Logistics"].contract_on_file is True
+    others = [m for m in atlas.members if m != "Atlas Freight & Logistics"]
+    assert others
+    for member in others:
+        assert by_name[member].contract_on_file is None
+        assert by_name[member].country is None

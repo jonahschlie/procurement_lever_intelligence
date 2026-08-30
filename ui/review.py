@@ -53,7 +53,7 @@ def render() -> None:
 
     excluded = _aggregates(profile)
     company_approvals, company_names = _companies(run_id)
-    intercompany, approvals, names, assignments = _suppliers(run_id, suppliers)
+    intercompany, assignments = _suppliers(run_id, suppliers)
     _currency(run_id)
     addressable = _addressability(run_id)
 
@@ -65,8 +65,6 @@ def render() -> None:
             company_approvals,
             company_names,
             intercompany,
-            approvals,
-            names,
             assignments,
             addressable,
         )
@@ -160,7 +158,6 @@ def _companies(run_id: str) -> tuple[dict[int, bool], dict[int, str]]:
 def _suppliers(run_id, artifact):
     groups = artifact.groups
     ic_groups = [g for g in groups if g.is_intercompany]
-    third_party = [g for g in groups if not g.is_intercompany]
 
     st.subheader(f"3 · Intercompany ({len(ic_groups)})")
     st.caption(
@@ -194,149 +191,144 @@ def _suppliers(run_id, artifact):
     else:
         st.info("No supplier resembles one of the group's own companies.")
 
-    merges = [g for g in third_party if len(g.members) > 1]
-    unsure = [g for g in merges if not g.approved]
-    settled = [g for g in merges if g.approved]
+    st.subheader("4 · Supplier consolidation")
+    assignments = _consolidation(run_id, artifact)
+    return intercompany, assignments
 
-    st.subheader(f"4 · Supplier consolidation ({len(third_party)} suppliers)")
+
+# What decided a name's group, in the words of the screen rather than the code.
+DECIDED_BY = {
+    "deterministic": "cleanup match",
+    "ai": "agent",
+    "ai_unsure": "agent unsure",
+    "user": "you",
+}
+
+
+def _consolidation(run_id, artifact) -> dict[str, str]:
+    """Every raw name, the group it belongs to, and who decided that.
+
+    One table rather than four blocks. The count in the heading is then something
+    a reader can add up, and correcting the agent is the same gesture whether it
+    merged two names or kept them apart: type the group you want.
+    """
+    groups = artifact.groups
+    volumes = name_volumes(run_id)
+    # A group the agent was unsure about is not merged unless someone says so, so
+    # its members start under their own names -- the same default as before.
+    initial = {
+        member: (group.canonical_name if group.approved else member)
+        for group in groups
+        for member in group.members
+    }
+    if not initial:
+        st.info("No supplier names to group.")
+        return {}
+
+    unsure = sum(1 for g in groups if not g.approved for _ in g.members)
     st.caption(
-        f"{artifact.distinct_names} raw names. Intercompany entities are not shown here."
+        f"{artifact.distinct_names} raw names as the export wrote them. Type in **Group** to "
+        "move a name, invent a group or split one; clear the cell and the name stands alone. "
+        "Sort by Group to bring a group's names together."
+        + (
+            f"  \n**{unsure} name(s) the agent was not confident about are left ungrouped** — "
+            "sort by *Decided by* to find them."
+            if unsure
+            else ""
+        )
     )
 
-    approvals: dict[int, bool] = {}
-    names: dict[int, str] = {}
-
-    if unsure:
-        st.markdown("**Needs a decision** — the agent was not confident:")
-        edited = st.data_editor(
-            _merge_frame(unsure),
-            key="review_unsure",
-            width="stretch",
-            hide_index=True,
-            disabled=["Members", "Rows", "Confidence", "Why"],
-            column_config={"Confidence": rate_column()},
-        )
-        approvals.update({g.group_id: bool(v) for g, v in zip(unsure, edited["Merge"])})
-        names.update({g.group_id: str(n) for g, n in zip(unsure, edited["Canonical name"])})
-
-    if settled:
-        with st.expander(f"{len(settled)} groups merged automatically — open to review"):
-            edited = st.data_editor(
-                _merge_frame(settled),
-                key="review_settled",
-                width="stretch",
-                hide_index=True,
-                disabled=["Members", "Rows", "Confidence", "Why"],
-                column_config={"Confidence": rate_column()},
-            )
-            approvals.update({g.group_id: bool(v) for g, v in zip(settled, edited["Merge"])})
-            names.update({g.group_id: str(n) for g, n in zip(settled, edited["Canonical name"])})
-
-    if artifact.rejected:
-        with st.expander(f"{len(artifact.rejected)} pairs the agent kept apart"):
-            st.dataframe(
-                pd.DataFrame(
-                    [
-                        {"Left": p.left, "Right": p.right, "Similarity": p.similarity, "Why": p.comment}
-                        for p in artifact.rejected
-                    ]
-                ),
-                width="stretch",
-                hide_index=True,
-                column_config={"Similarity": rate_column()},
-            )
-
-    assignments = _group_editor(run_id, groups)
-    return intercompany, approvals, names, assignments
-
-
-def _group_editor(run_id, groups) -> dict[str, str] | None:
-    """Every raw name with the group it belongs to, editable.
-
-    Approving and renaming cannot move a name between groups, invent a group or
-    split one. This can: change the Group cell and the name moves, type a new
-    label and the group exists, empty it and the name stands on its own.
-
-    Returns None when nothing was touched, so an untouched screen confirms
-    exactly as it did before this editor existed.
-    """
-    volumes = name_volumes(run_id)
-    initial = {member: group.canonical_name for group in groups for member in group.members}
-    if not initial:
-        return None
-
-    with st.expander(f"Edit all {len(initial)} names — move, merge, split, rename"):
-        st.caption(
-            "One row per name as the export wrote it. Sort by Group to bring a group's "
-            "names together, then correct what belongs elsewhere."
-        )
-        edited = st.data_editor(
-            as_money(
-                pd.DataFrame(
-                    [
-                        {
-                            "Raw name": name,
-                            "Group": group,
-                            "Rows": int(volumes["rows"].get(name, 0)),
-                            "Spend (EUR)": float(volumes["spend"].get(name, 0.0)),
-                        }
-                        for name, group in sorted(initial.items(), key=lambda i: (i[1], i[0]))
-                    ]
-                ),
-                "Spend (EUR)",
-            ),
-            key="review_group_editor",
-            width="stretch",
-            hide_index=True,
-            disabled=["Raw name", "Rows", "Spend (EUR)"],
-            column_config={"Spend (EUR)": money()},
-        )
-        assignments = {
-            str(name): str(group)
-            for name, group in zip(edited["Raw name"], edited["Group"])
-        }
-        if assignments == initial:
-            return None
-
-        resulting = sorted(
-            {(group or name) for name, group in assignments.items()}
-        )
-        st.info(
-            f"{len(initial)} names → {len(resulting)} suppliers "
-            f"(as proposed: {len({g.canonical_name for g in groups})})"
-        )
-        st.dataframe(
+    apart = _kept_apart(artifact)
+    edited = st.data_editor(
+        as_money(
             pd.DataFrame(
                 [
                     {
+                        "Raw name": name,
                         "Group": group,
-                        "Names": "  |  ".join(
-                            sorted(n for n, g in assignments.items() if (g or n) == group)
-                        ),
+                        "Rows": int(volumes["rows"].get(name, 0)),
+                        "Spend (EUR)": float(volumes["spend"].get(name, 0.0)),
+                        "Decided by": _decided_by(name, groups),
+                        "Note": _note(name, groups, apart),
                     }
-                    for group in resulting
+                    for name, group in sorted(initial.items(), key=lambda i: (i[1], i[0]))
                 ]
             ),
-            width="stretch",
-            hide_index=True,
-        )
-        return assignments
-
-
-def _merge_frame(groups) -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {
-                "Merge": g.approved,
-                "Canonical name": g.canonical_name,
-                "Members": "  |  ".join(g.members),
-                "Rows": g.row_count,
-                "Confidence": g.confidence,
-                "Why": g.comment,
-            }
-            for g in groups
-        ]
+            "Spend (EUR)",
+        ),
+        key="review_consolidation",
+        width="stretch",
+        hide_index=True,
+        disabled=["Raw name", "Rows", "Spend (EUR)", "Decided by", "Note"],
+        column_config={"Spend (EUR)": money()},
     )
+
+    assignments = {
+        str(name): str(group) for name, group in zip(edited["Raw name"], edited["Group"])
+    }
+    resulting, own = _resulting(assignments, groups, volumes)
+    proposed, _ = _resulting(initial, groups, volumes)
+    st.caption(
+        f"{len(assignments)} names → **{resulting} suppliers**, {own} of them the group's "
+        "own entities (block 3)."
+        + (f"  As proposed: {proposed}." if assignments != initial else "")
+    )
+    return assignments
+
+
+def _resulting(assignments: dict[str, str], groups, volumes) -> tuple[int, int]:
+    """How many suppliers a set of assignments produces, and how many are the group's own.
+
+    The intercompany mark follows whichever original group contributes the most
+    rows, so the count here is arrived at the same way confirm_suppliers does it
+    -- a preview that disagreed with the result would be worse than none.
+    """
+    origin = {member: group for group in groups for member in group.members}
+    clusters: dict[str, list[str]] = {}
+    for name, label in assignments.items():
+        clusters.setdefault(label.strip() or name, []).append(name)
+
+    own = 0
+    for members in clusters.values():
+        sources = [origin[name] for name in members if name in origin]
+        if not sources:
+            continue
+        dominant = max(
+            sources,
+            key=lambda g: sum(int(volumes["rows"].get(n, 0)) for n in g.members),
+        )
+        own += bool(dominant.is_intercompany)
+    return len(clusters), own
+
+
+def _kept_apart(artifact) -> dict[str, list[str]]:
+    """Per name, the neighbours the agent judged to be a different supplier.
+
+    This used to be a read-only list of its own. On the row it belongs to it is
+    actionable: give both names the same group and the agent is overruled.
+    """
+    apart: dict[str, list[str]] = {}
+    for pair in artifact.rejected:
+        apart.setdefault(pair.left, []).append(pair.right)
+        apart.setdefault(pair.right, []).append(pair.left)
+    return apart
+
+
+def _decided_by(name: str, groups) -> str:
+    group = next(g for g in groups if name in g.members)
+    if len(group.members) == 1:
+        return "alone"
+    return DECIDED_BY.get(group.source, group.source)
+
+
+def _note(name: str, groups, apart: dict[str, list[str]]) -> str:
+    group = next(g for g in groups if name in g.members)
+    parts = []
+    if len(group.members) > 1:
+        parts.append(group.comment)
+    if name in apart:
+        parts.append("agent kept it apart from: " + ", ".join(sorted(apart[name])))
+    return " · ".join(parts) or "No other name comes close."
 
 
 def _currency(run_id: str) -> None:
@@ -425,8 +417,6 @@ def _apply(
     company_approvals,
     company_names,
     intercompany,
-    approvals,
-    names,
     assignments,
     addressable,
 ) -> None:
@@ -445,7 +435,7 @@ def _apply(
         run_rule_engine(run_id)
 
         st.write("Writing canonical suppliers and intercompany")
-        confirm_suppliers(run_id, approvals, names, intercompany, assignments=assignments)
+        confirm_suppliers(run_id, intercompany=intercompany, assignments=assignments)
 
         if addressable:
             st.write("Writing addressability")
