@@ -10,24 +10,6 @@ from levers.engine import load_artifact, run_levers
 from tests.conftest import FakeClient
 
 
-@pytest.fixture
-def lever_run(defective_run):
-    """A table carrying everything the levers need, written directly."""
-    table = load_table(defective_run)
-    table["amount_eur"] = [1000.0, 1000.0, 500.0, 500.0, 20.0, 20.0, 300.0, 300.0, 80.0, 80.0, 0.0, 0.0]
-    table["include_addressable_spend"] = [True] * 10 + [False, False]
-    table["supplier_normalized"] = (
-        ["Atlas"] * 2 + ["Sopra"] * 2 + ["Tiny"] * 2 + ["Delta"] * 2 + ["Vega"] * 2 + ["", ""]
-    )
-    table["company_name"] = ["Alpha", "Beta"] * 6
-    table["supplier_contract_status"] = (
-        ["yes"] * 2 + ["no"] * 2 + ["unknown"] * 2 + ["no"] * 2 + ["yes"] * 2 + ["", ""]
-    )
-    table["purchase_order"] = ["PO"] * 4 + [""] * 2 + ["PO"] * 6
-    write_table(defective_run, table, "spend_classification")
-    return defective_run
-
-
 def _proposal(order=None):
     return LeverReasoningProposal(
         levers=[

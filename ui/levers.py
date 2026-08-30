@@ -43,6 +43,27 @@ def render() -> None:
     _benchmark(artifact)
     _assumptions(artifact)
 
+    st.divider()
+    if st.button("Build executive summary", type="primary"):
+        _build_summary(run_id)
+
+
+def _build_summary(run_id: str) -> None:
+    from analysis.summary import build_summary, has_summary
+
+    with st.status("Building the executive summary", expanded=True) as status:
+        if not has_summary(run_id):
+            st.write("Gathering the findings and drafting questions for the business")
+            summary = build_summary(run_id)
+            status.update(
+                label=f"{len(summary.sections)} sections, {len(summary.sme_questions)} questions",
+                state="complete",
+            )
+        else:
+            status.update(label="Ready", state="complete")
+    st.session_state["switch_to"] = "summary"
+    st.rerun()
+
 
 def _headline(artifact, found: int, total: int) -> None:
     left, middle, right = st.columns(3)

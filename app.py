@@ -19,6 +19,7 @@ from ui import (
     review,
     schema_mapping,
     start,
+    summary,
     workbook_review,
 )
 
@@ -59,6 +60,7 @@ PAGES = {
     "review": st.Page(review.render, title="Review & Confirm", url_path="review"),
     "report": st.Page(report.render, title="Data Quality Report", url_path="report"),
     "levers": st.Page(levers.render, title="Procurement Levers", url_path="levers"),
+    "summary": st.Page(summary.render, title="Executive Summary", url_path="summary"),
 }
 
 navigation = st.navigation(list(PAGES.values()))

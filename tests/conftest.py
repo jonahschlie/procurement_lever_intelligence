@@ -147,3 +147,48 @@ def defective_run(run_root):
     run_id = create_run().run_id
     write_table(run_id, defective_table(), "canonical_table")
     return run_id
+
+
+@pytest.fixture
+def lever_run(defective_run):
+    """A run taken through profiling and the rule engine, then given lever data.
+
+    Going the real route means the profiling and rule-engine artifacts exist, so
+    anything reading them -- the summary, the chat context -- sees a realistic run
+    rather than a table that appeared from nowhere.
+    """
+    from core.table import load_table, write_table
+    from profiling.data_profiling import confirm_profiling, run_profiling
+    from transform.rule_engine import run_rule_engine
+
+    run_profiling(defective_run)
+    confirm_profiling(defective_run)
+    run_rule_engine(defective_run)
+
+    table = load_table(defective_run)
+    table["amount_eur"] = [1000.0, 1000.0, 500.0, 500.0, 20.0, 20.0, 300.0, 300.0, 80.0, 80.0, 0.0, 0.0]
+    table["include_addressable_spend"] = [True] * 10 + [False, False]
+    table["supplier_normalized"] = (
+        ["Atlas"] * 2 + ["Sopra"] * 2 + ["Tiny"] * 2 + ["Delta"] * 2 + ["Vega"] * 2 + ["", ""]
+    )
+    table["company_name"] = ["Alpha", "Beta"] * 6
+    table["supplier_contract_status"] = (
+        ["yes"] * 2 + ["no"] * 2 + ["unknown"] * 2 + ["no"] * 2 + ["yes"] * 2 + ["", ""]
+    )
+    table["purchase_order"] = ["PO"] * 4 + [""] * 2 + ["PO"] * 6
+    table["include_spend_analysis"] = [True] * 10 + [False, False]
+    table["include_supplier_analysis"] = [True] * 10 + [False, False]
+    write_table(defective_run, table, "spend_classification")
+
+    from agents.lever_reasoning import LeverReasoningProposal
+    from levers.engine import run_levers
+
+    run_levers(
+        defective_run,
+        client=FakeClient(
+            LeverReasoningProposal(
+                levers=[], priority_rationale="", recommended_order=[], order_reason=""
+            )
+        ),
+    )
+    return defective_run

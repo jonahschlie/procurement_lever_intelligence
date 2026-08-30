@@ -426,6 +426,30 @@ class LeverArtifact(BaseModel):
     llm_call: LlmCall | None = None
 
 
+class SummarySection(BaseModel):
+    """One stage's outcome, as a headline plus the facts behind it."""
+
+    title: str
+    headline: str
+    facts: list[str] = []
+
+
+class SmeQuestionRecord(BaseModel):
+    question: str
+    rationale: str
+    addressee: str
+    unlocks: str
+
+
+class ExecutiveSummary(BaseModel):
+    """Everything the summary screens and the later export read from."""
+
+    run_id: str
+    sections: list[SummarySection] = []
+    sme_questions: list[SmeQuestionRecord] = []
+    llm_call: LlmCall | None = None
+
+
 class StepRecord(BaseModel):
     step: str
     completed_at: datetime

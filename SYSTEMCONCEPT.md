@@ -1453,6 +1453,51 @@ Each screen shows what was decided, why, and lets the user override it. No stage
 
 ---
 
+# 21.1 Executive Summary
+
+The analysis is spread over screens that each serve one working step. Someone who
+did not click through it needs the result in one place: what was found, the biggest
+levers, the spend chain drawn, the questions still open, and somewhere to ask.
+
+Six tabs over the artifacts the stages already wrote. Nothing is recomputed, so this
+view cannot disagree with the screens behind it.
+
+## Charts are computed, not styled by eye
+
+Colour follows the visualisation guideline, verified with its validator rather than
+chosen by taste. The brand purple failed as a categorical hue -- measured lightness
+0.301, outside the permitted band, and three checks failed -- so it stays the
+interface accent and the dark end of the sequential ramp, while the series use a
+validated six-hue set whose worst adjacent colour-vision separation is dE 9.1.
+
+Two of those hues sit below the contrast floor. The guideline allows that only
+against relief, so every chart carries direct labels and a "Show data" expander with
+the numbers behind it. The expander doubles as traceability.
+
+A pie is legible at a glance and only up to six segments, so supplier share shows the
+largest five plus "Other" and is paired with a ranked bar that shows the tail a pie
+cannot. Deductions in the waterfall are neutral, not red: removing intercompany spend
+from a total is not a failure.
+
+## The chat is grounded, and says when it is not
+
+The assistant receives one context assembled from the run's artifacts -- aggregates
+only, never a booking. It answers from that or says the question is outside this
+analysis and names what would be needed. It never calculates, for the same reason it
+never does anywhere else: a figure it derived could contradict one on the screen
+beside it.
+
+## Questions the data cannot answer
+
+Booking data measures what happened and cannot say why. An agent turns the findings
+into questions for the people who know the business -- whether a missing purchase
+order reference is a control gap or simply how this company buys, what the stated
+subtotals exclude, whether duplicate bookings were already recovered. Alongside them
+sits the deterministic list of fields to request, each naming the lever it would
+unlock.
+
+---
+
 # 22. Why This Architecture?
 
 The solution is

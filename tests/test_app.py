@@ -419,3 +419,49 @@ def test_lever_page_shows_the_calculation_openly(run_root, portfolio_xlsx):
     assert list(priority.columns) == [
         "#", "Lever", "Spend it applies to", "Potential (base)", "Range", "Effort", "Confidence",
     ]
+
+
+def test_summary_page_is_empty_before_it_is_built(run_root):
+    app = _page("summary")
+
+    assert not app.exception
+    assert app.title[0].value == "Executive Summary"
+    assert "No summary yet" in app.info[0].value
+
+
+def test_summary_page_shows_six_tabs(run_root, lever_run):
+    from agents.sme_questions import SmeQuestion, SmeQuestionProposal
+    from analysis.summary import build_summary
+
+    build_summary(
+        lever_run,
+        client=FakeClient(
+            SmeQuestionProposal(
+                questions=[
+                    SmeQuestion(
+                        question="Is the missing purchase order a policy choice?",
+                        rationale="Most bookings carry none.",
+                        addressee="procurement",
+                        unlocks="Whether maverick spend is a gap or the norm.",
+                    )
+                ]
+            )
+        ),
+    )
+
+    app = _page("summary", run_id=lever_run)
+
+    assert not app.exception
+    labels = [tab.label for tab in app.tabs]
+    assert labels == [
+        "Overview",
+        "Top Levers",
+        "All Levers",
+        "Visuals",
+        "Open Questions",
+        "Ask the Analysis",
+    ]
+    # The assumption caveat belongs on the summary too, not only on the detail page:
+    # quietly on the overview, prominently above the top levers.
+    assert any("assumptions, not findings" in c.value for c in app.caption)
+    assert any("assumptions, not findings" in w.value for w in app.warning)

@@ -34,7 +34,11 @@ addressable spend.
    of them and traceable back to its bookings. Those it does not support say why — either measured
    and empty, or missing a field, which produces the request list for the next data ask.
 
-The management summary and the remaining analytical views follow.
+9. **Executive summary** — six tabs over the artifacts: what was found, the biggest levers, the
+   full catalogue, the spend chain and supplier share drawn, the open data and business questions,
+   and a chat grounded in this run's figures.
+
+An Excel export of the same material follows.
 
 ## Setup
 
