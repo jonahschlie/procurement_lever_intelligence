@@ -20,6 +20,7 @@ from typing import Callable
 
 import pandas as pd
 
+from core.canonical import company_key, duplicate_key
 from core.config import (
     LEVER_RATES,
     SUPPLIER_DEPENDENCY_THRESHOLD,
@@ -52,7 +53,7 @@ class Lever:
 
 def _multi_company(rows: pd.DataFrame) -> pd.Series:
     """Suppliers billing more than one company: volume that could be bundled."""
-    served = rows.groupby("supplier_normalized")["company_name"].transform("nunique")
+    served = company_key(rows).groupby(rows["supplier_normalized"]).transform("nunique")
     return served > 1
 
 
@@ -97,14 +98,11 @@ def _duplicate_excess(rows: pd.DataFrame) -> pd.Series:
     if "flag_duplicate_transaction" not in rows.columns:
         return pd.Series(False, index=rows.index)
     flagged = rows["flag_duplicate_transaction"].fillna(False).astype(bool)
-    key = ["company", "supplier", "amount_local", "posting_date", "invoice_number"]
-    available = [column for column in key if column in rows.columns]
-    if not available:
+    key = duplicate_key(rows)
+    if len(key.columns) < 2:
         return pd.Series(False, index=rows.index)
     # Keep every row of a group except the first: that is the excess.
-    return flagged & rows[flagged].duplicated(subset=available, keep="first").reindex(
-        rows.index, fill_value=False
-    )
+    return flagged & key[flagged].duplicated(keep="first").reindex(rows.index, fill_value=False)
 
 
 def _dependency(rows: pd.DataFrame) -> pd.Series:

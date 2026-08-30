@@ -170,12 +170,14 @@ Dashboard
 | Data Profiling | 10 | built |
 | Rule Engine | 11 | built |
 | Currency Harmonization | 13 | built |
+| Company Normalization | 11 | built |
 | Supplier Normalization | 11 | built |
 | Intercompany and Addressability | 11 | built |
 | Canonical Spend Cube | 14 | open |
 | Lever Quantification and Reasoning | 16.1 | built |
 | Lever Catalogue and Data Requests | 16.1 | built |
-| Analytical Views and AI Reasoning | 15, 17–19 | open |
+| Executive Summary | 15, 17–19 | built |
+| Excel Export | 15 | open |
 
 ---
 
@@ -570,7 +572,15 @@ grand total row       1      219,667,586.17
 naive column sum            666,754,199.19   →  2.93× overstated
 ```
 
-Summing the amount column without detecting them nearly triples the spend. Aggregate rows are recognisable by a near-empty row with a populated amount, a marker in a text column, or a missing company identifier.
+Summing the amount column without detecting them nearly triples the spend.
+
+Three independent signals nominate a row, and any one of them is enough:
+
+1. **A total marker in a text column** — `TOTAL`, `SUMME`, `ZWISCHENSUMME` and the like, matched on word boundaries so `TotalEnergies SE` stays a booking. Language-dependent, and therefore the weakest of the three.
+2. **An amount with no identifiers** — no posting date, no document number, no GL account. Structural and language-independent: measured against exports in five languages it caught `Totaal`, `Totale`, `Razem` and `Suma` without any of those words being on the marker list.
+3. **An amount equal to the sum of its block** — pure arithmetic, within a 0.5% tolerance, over the rows of the same company or the same company and GL account. This is what catches the subtotal that *kept* its posting date, document number and account, which the first two signals miss. A block needs at least four other rows and the candidate must be the largest amount in it, so a handful of similar bookings cannot nominate each other.
+
+Only signal 2 preticks the exclusion. A marker on an otherwise complete booking, or a sum that happens to match, is shown for a decision rather than acted on — a false negative silently overstates spend, a false positive costs a glance.
 
 ## 10.5 Reconciliation
 
@@ -675,6 +685,39 @@ They restate figures already present in the detail. Removing them instead would 
 
 ---
 
+## Company Normalization
+
+A company that appears under several spellings is counted as several companies. One
+workbook spells its own entities consistently, so with a single submission this
+stage changes nothing — it exists for the intended case, one export per portfolio
+company, where `Helios Power Polska Sp. z o.o.` and `HELIOS POWER POLSKA` arrive
+from different systems.
+
+The consequences of getting it wrong are quiet rather than loud: the portfolio
+benchmark gains a company, the contract coverage per company splits, and supplier
+consolidation miscounts how many companies a supplier serves.
+
+Deterministic throughout, with no agent. There are a handful of companies against
+eighty supplier names, the user sees every group, and the company code carries a
+signal supplier names do not — which cuts both ways:
+
+| Situation | Treatment |
+|---|---|
+| Same code, same export | One company, whatever the spelling. Within one export a code is authoritative. |
+| Same code, matching name across exports | One company. |
+| **Same code, unrelated names across exports** | **Kept apart and surfaced.** Two ERPs both numbering their entities from 1000 are not one company. |
+| Matching name across exports | One company. |
+
+The result is written to `company_normalized` and `company_canonical_id` beside the
+untouched `company` and `company_name`. Everything downstream asks for the company
+through a helper that falls back to the raw name where the stage has not run, so a
+run written before it existed groups exactly as it always did.
+
+The canonical id is also what duplicate detection keys on, so two exports whose
+codes collide cannot make unrelated bookings look like the same payment twice.
+
+---
+
 ## Supplier Formatting
 
 Normalize
@@ -697,6 +740,14 @@ SA
 ```
 
 Original values remain stored.
+
+The proposed grouping is a starting point, not a verdict. Beyond approving,
+rejecting and renaming a group, every raw name can be assigned to a group by hand:
+moving a name between groups, inventing a group that was never proposed, and
+splitting one apart. A group built that way is approved by definition, and inherits
+two things rather than reinventing them — the supplier master entry, because country
+and contract status may only come from there, and the intercompany mark of whichever
+original group contributes the most rows.
 
 ---
 
@@ -960,6 +1011,9 @@ Data Profiling
 Rule Engine
       │
       ▼
+Company Normalization
+      │
+      ▼
 Supplier Normalization
       │
       ▼
@@ -987,6 +1041,7 @@ Analytics      AI Reasoning
 |----------|------------|
 | Company | Portfolio Company |
 | Company Name | Readable company name |
+| Company Normalized | Canonical company across submissions |
 | Supplier | Normalized Supplier |
 | Supplier ID | Canonical Supplier ID |
 | AI Category | Procurement Category |

@@ -101,3 +101,37 @@ def test_the_context_survives_a_run_without_levers(defective_run):
 
     assert context["run_id"] == defective_run
     assert "levers" not in context
+
+
+def test_every_section_keeps_a_sentence_next_to_its_figures(analysed):
+    summary = build_summary(analysed, client=FakeClient(_proposal()))
+
+    for section in summary.sections:
+        # A metric wall without the sentence reads well and says nothing.
+        assert section.headline
+        assert section.metrics or section.rows or section.facts
+
+
+def test_sections_carry_the_tables_behind_their_headline(analysed):
+    summary = build_summary(analysed, client=FakeClient(_proposal()))
+    by_title = {section.title: section for section in summary.sections}
+
+    levers = by_title["What can be acted on"]
+    assert levers.metrics
+    assert levers.rows
+    assert "Applies to (EUR)" in levers.rows[0]
+    # Amounts stay numeric so the screen and the export can each format them.
+    assert isinstance(levers.rows[0]["Applies to (EUR)"], (int, float))
+
+
+def test_a_summary_written_before_the_tables_existed_still_loads(analysed):
+    from core.models import ExecutiveSummary
+
+    old = ExecutiveSummary.model_validate(
+        {
+            "run_id": analysed,
+            "sections": [{"title": "Old", "headline": "As it was", "facts": ["one fact"]}],
+        }
+    )
+    assert old.sections[0].metrics == []
+    assert old.sections[0].rows == []

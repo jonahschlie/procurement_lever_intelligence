@@ -19,24 +19,28 @@ Implemented so far:
    engine turns the findings into flags and decides which rows each analysis may use.
 6. **Currency** — amounts are converted to EUR at the ECB daily rate of their posting date. Spend
    counts net, with gross and credit volume reported alongside.
-7. **Suppliers and intercompany** — name variants are matched deterministically, the unclear pairs
-   judged by an agent. Suppliers that are the group's own entities are detected from the company
-   names in the data itself and separated out.
-8. **Addressability** — cost types procurement cannot influence (payroll, tax, financing,
+7. **Companies** — one legal entity per name, however each export spells it. Deterministic, and
+   deliberate about the company code: authoritative within an export, and a collision rather than a
+   merge when two systems both number their entities from 1000.
+8. **Suppliers and intercompany** — name variants are matched deterministically, the unclear pairs
+   judged by an agent. Every raw name can also be assigned to a group by hand, which is the only
+   way to move a name, invent a group or split one. Suppliers that are the group's own entities are
+   detected from the company names in the data itself and separated out.
+9. **Addressability** — cost types procurement cannot influence (payroll, tax, financing,
    provisions) are classified once and excluded from the negotiable figure.
 
 Everything requiring judgement is gathered on one **Review & Confirm** screen; everything automatic
 appears afterwards in one **Data Quality Report**, which ends in the chain from gross spend to
 addressable spend.
 
-8. **Levers** — a fixed catalogue of fifteen standard procurement levers tested against the data.
-   Those the data supports are quantified with a saving range, every euro credited to exactly one
-   of them and traceable back to its bookings. Those it does not support say why — either measured
-   and empty, or missing a field, which produces the request list for the next data ask.
+10. **Levers** — a fixed catalogue of fifteen standard procurement levers tested against the data.
+    Those the data supports are quantified with a saving range, every euro credited to exactly one
+    of them and traceable back to its bookings. Those it does not support say why — either measured
+    and empty, or missing a field, which produces the request list for the next data ask.
 
-9. **Executive summary** — six tabs over the artifacts: what was found, the biggest levers, the
-   full catalogue, the spend chain and supplier share drawn, the open data and business questions,
-   and a chat grounded in this run's figures.
+11. **Executive summary** — six tabs over the artifacts: what was found, the biggest levers, the
+    full catalogue, the spend chain and supplier share drawn, the open data and business questions,
+    and a chat grounded in this run's figures.
 
 An Excel export of the same material follows.
 
@@ -89,15 +93,24 @@ runs/run_20260829_233045/
     07_currency/
         currency_report.json           # net, gross and credit volume in EUR
         ecb_rates.csv                  # the rates this run used, frozen
-    08_supplier_normalization/
+    08_company_normalization/
+        company_normalization.json             # one entity per spelling, code collisions
+        company_normalization_confirmed.json
+    09_supplier_normalization/
         supplier_normalization.json            # candidates, agent verdicts, clusters
         supplier_normalization_confirmed.json  # what the user approved
-    09_spend_classification/
+    10_spend_classification/
         spend_classification.json              # addressability per cost type
         spend_classification_confirmed.json
-    10_levers/
+    11_levers/
         levers.json                            # bases, rates, potentials, narrative
+    12_executive_summary/
+        summary.json                           # the six tabs, and the questions for the business
 ```
+
+Inserting a stage renumbers the ones after it, so runs written earlier keep their old numbers on
+disk. They stay readable: an existing directory for a stage wins over the number that stage would
+get today.
 
 Pipeline stages and screens are deliberately not the same thing: the run keeps every stage as its
 own numbered directory for auditability, while the UI collapses them into one decision screen and

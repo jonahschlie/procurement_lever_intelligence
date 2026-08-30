@@ -22,7 +22,7 @@ import pandas as pd
 
 from agents.base import run_agent
 from agents.lever_reasoning import build_input, definition
-from core.canonical import field_by_key
+from core.canonical import company_key, field_by_key
 from core.config import EFFORT_COMPANIES, EFFORT_SUPPLIERS, LEVER_PRECEDENCE
 from core.models import (
     CompanyBenchmark,
@@ -209,7 +209,7 @@ def _measure(lever, rows, member, primary, status, reason, missing) -> LeverResu
     net = float(net_rows["amount_eur"].sum())
 
     suppliers = int(gross_rows["supplier_normalized"].nunique())
-    companies = int(gross_rows["company_name"].nunique())
+    companies = int(company_key(gross_rows).nunique())
     effort, effort_reason = _effort(suppliers, companies)
 
     # A risk lever reports its exposure through gross_base and metric. It claims
@@ -291,10 +291,10 @@ def _metric(lever, gross_rows: pd.DataFrame, gross: float, rows: pd.DataFrame) -
 def _contributors(rows: pd.DataFrame) -> list[LeverContributor]:
     if rows.empty:
         return []
-    grouped = rows.groupby("supplier_normalized").agg(
+    grouped = rows.assign(_company=company_key(rows)).groupby("supplier_normalized").agg(
         spend=("amount_eur", "sum"),
         rows=("amount_eur", "size"),
-        companies=("company_name", "nunique"),
+        companies=("_company", "nunique"),
     )
     status = rows.groupby("supplier_normalized")["supplier_contract_status"].first()
     return [
@@ -312,7 +312,7 @@ def _contributors(rows: pd.DataFrame) -> list[LeverContributor]:
 def _benchmark(rows: pd.DataFrame) -> list[CompanyBenchmark]:
     """The companies compared, so a lever can be pointed where it bites first."""
     entries = []
-    for company, group in rows.groupby("company_name"):
+    for company, group in rows.groupby(company_key(rows)):
         spend = float(group["amount_eur"].sum())
         if not spend:
             continue

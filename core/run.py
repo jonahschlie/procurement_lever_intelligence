@@ -30,6 +30,7 @@ PIPELINE_STEPS = (
     "profiling",
     "rule_engine",
     "currency",
+    "company_normalization",
     "supplier_normalization",
     "spend_classification",
     "levers",
@@ -63,7 +64,20 @@ def step_dir_name(step: str) -> str:
 
 
 def step_path(run_id: str, step: str) -> Path:
-    path = run_path(run_id) / step_dir_name(step)
+    """The stage's directory in this run, creating it if the stage is new here.
+
+    The number in the directory name comes from the stage's position, so
+    inserting a stage renumbers the ones after it. A run written before the
+    insertion keeps its old numbers on disk and is still perfectly readable, so
+    an existing directory for the same stage wins over the number it would get
+    today.
+    """
+    root = run_path(run_id)
+    path = root / step_dir_name(step)
+    if not path.is_dir():
+        existing = sorted(root.glob(f"*_{step}"))
+        if existing:
+            return existing[0]
     path.mkdir(parents=True, exist_ok=True)
     return path
 

@@ -15,10 +15,12 @@ from agents.base import run_agent
 from analysis import charts, views
 from analysis.spend_report import build_spend_report
 from analysis.summary import analysis_context, has_summary, load_summary
+from core.canonical import company_key
 from core.table import has_table, load_table
 from levers.definitions import BY_ID, SPEND_KINDS
 from levers.engine import has_artifact, load_artifact
 from ui import levers as levers_page
+from ui.format import as_money, eur, eur_compact, money, percent
 
 ASSUMPTION_NOTE = (
     "**Saving percentages are assumptions, not findings.** The spend each lever "
@@ -49,7 +51,7 @@ def render() -> None:
         ["Overview", "Top Levers", "All Levers", "Visuals", "Open Questions", "Ask the Analysis"]
     )
     with overview:
-        _overview(summary, artifact)
+        _overview(summary, artifact, table)
     with top:
         _top_levers(artifact)
     with catalogue:
@@ -62,23 +64,65 @@ def render() -> None:
         _chat(run_id, table)
 
 
-def _overview(summary, artifact) -> None:
+def _overview(summary, artifact, table) -> None:
     if artifact:
-        left, middle, right = st.columns(3)
-        left.metric("Addressable spend (EUR)", f"{artifact.addressable_spend:,.0f}")
-        middle.metric("Identified potential (EUR)", f"{artifact.total_base:,.0f}")
+        left, middle, right, far = st.columns(4)
+        left.metric(
+            "Addressable spend (EUR)",
+            eur_compact(artifact.addressable_spend),
+            help=eur(artifact.addressable_spend),
+        )
+        middle.metric(
+            "Identified potential (EUR)",
+            eur_compact(artifact.total_base),
+            help=eur(artifact.total_base),
+        )
         right.metric(
             "Range",
-            f"{artifact.total_low / 1e6:,.1f} – {artifact.total_high / 1e6:,.1f}m",
+            f"{eur_compact(artifact.total_low)} – {eur_compact(artifact.total_high)}",
+            help=f"{eur(artifact.total_low)} to {eur(artifact.total_high)}",
         )
+        far.metric("Rows analysed", f"{len(table):,}")
         st.caption(ASSUMPTION_NOTE)
 
     st.divider()
     for section in summary.sections:
         st.subheader(section.title)
+        # The headline carries the meaning; the metrics and the table carry the
+        # evidence. Figures without the sentence read impressively and say nothing.
         st.markdown(f"**{section.headline}**")
+        _section_metrics(section)
+        _section_table(section)
         for fact in section.facts:
             st.markdown(f"- {fact}")
+
+
+def _section_metrics(section) -> None:
+    if not section.metrics:
+        return
+    for column, (label, value) in zip(st.columns(len(section.metrics)), section.metrics):
+        column.metric(label, value)
+
+
+# A section column carrying an amount says so in its label, so one rule covers
+# every section without the renderer knowing what any of them contain.
+AMOUNT_SUFFIXES = ("(EUR)", "(local)")
+
+
+def _section_table(section) -> None:
+    """A section's detail, with amount columns shown as amounts."""
+    if not section.rows:
+        return
+    frame = pd.DataFrame(section.rows)
+    amounts = [
+        column for column in frame.columns if str(column).endswith(AMOUNT_SUFFIXES)
+    ]
+    st.dataframe(
+        as_money(frame, *amounts),
+        width="stretch",
+        hide_index=True,
+        column_config={column: money() for column in amounts},
+    )
 
 
 def _top_levers(artifact) -> None:
@@ -99,14 +143,14 @@ def _top_levers(artifact) -> None:
         with st.container(border=True):
             st.subheader(f"{rank} · {lever.name}")
             left, middle, right = st.columns(3)
-            left.metric("Potential (base)", f"{lever.potential_base:,.0f}")
+            left.metric("Potential (base)", eur(lever.potential_base))
             middle.metric(
-                "Range", f"{lever.potential_low:,.0f} – {lever.potential_high:,.0f}"
+                "Range", f"{eur_compact(lever.potential_low)} – {eur_compact(lever.potential_high)}"
             )
-            right.metric("Applies to", f"{lever.net_base:,.0f}")
+            right.metric("Applies to", eur(lever.net_base))
             st.caption(
-                f"{lever.net_base:,.0f} EUR × {lever.rate_base:.0%} assumed = "
-                f"{lever.potential_base:,.0f} EUR · confidence {lever.confidence}"
+                f"{eur(lever.net_base)} EUR × {lever.rate_base:.0%} assumed = "
+                f"{eur(lever.potential_base)} EUR · confidence {lever.confidence}"
             )
 
             if lever.opportunity:
@@ -118,7 +162,7 @@ def _top_levers(artifact) -> None:
                 st.caption(
                     "Largest contributors: "
                     + ", ".join(
-                        f"{c.supplier} ({c.spend:,.0f} EUR)" for c in lever.contributors[:3]
+                        f"{c.supplier} ({eur(c.spend)} EUR)" for c in lever.contributors[:3]
                     )
                 )
 
@@ -126,19 +170,24 @@ def _top_levers(artifact) -> None:
     if rest:
         st.subheader("The remaining levers")
         st.dataframe(
-            pd.DataFrame(
-                [
-                    {
-                        "Lever": l.name,
-                        "Applies to (EUR)": round(l.net_base, 0),
-                        "Potential (base)": round(l.potential_base, 0),
-                        "Rate": f"{l.rate_base:.0%}",
-                    }
-                    for l in rest
-                ]
+            as_money(
+                pd.DataFrame(
+                    [
+                        {
+                            "Lever": l.name,
+                            "Applies to (EUR)": l.net_base,
+                            "Potential (base)": l.potential_base,
+                            "Rate": f"{l.rate_base:.0%}",
+                        }
+                        for l in rest
+                    ]
+                ),
+                "Applies to (EUR)",
+                "Potential (base)",
             ),
             width="stretch",
             hide_index=True,
+            column_config={"Applies to (EUR)": money(), "Potential (base)": money()},
         )
 
     if artifact.priority_rationale:
@@ -192,12 +241,13 @@ def _visuals(table: pd.DataFrame, artifact) -> None:
         _figure(charts.supplier_ranking(spend), key="ranking")
 
     st.subheader("By company")
-    companies = sorted(rows["company_name"].astype(str).unique())
+    company = company_key(rows)
+    companies = sorted(company.astype(str).unique())
     if companies:
         chosen = st.selectbox("Company", companies)
-        subset = rows[rows["company_name"] == chosen]
+        subset = rows[company == chosen]
         st.caption(
-            f"{subset['amount_eur'].sum():,.0f} EUR across "
+            f"{eur(subset['amount_eur'].sum())} EUR across "
             f"{subset['supplier_normalized'].nunique()} suppliers"
         )
         _figure(charts.supplier_share(views.supplier_spend(subset)), key="company")
@@ -220,7 +270,33 @@ def _figure(figure, key: str = "") -> None:
     st.altair_chart(figure.chart, width="stretch")
     if not figure.data.empty:
         with st.expander("Show data"):
-            st.dataframe(figure.data, width="stretch", hide_index=True)
+            st.dataframe(
+                as_money(figure.data, *_amount_columns(figure.data)),
+                width="stretch",
+                hide_index=True,
+                column_config=_data_config(figure.data),
+            )
+
+
+# Chart frames carry amounts and shares side by side; shares are already
+# fractions of one, everything else numeric is euros.
+SHARE_COLUMNS = ("share", "cumulative")
+
+
+def _amount_columns(frame: pd.DataFrame) -> list[str]:
+    return [
+        column
+        for column in frame.columns
+        if column not in SHARE_COLUMNS and pd.api.types.is_numeric_dtype(frame[column])
+    ]
+
+
+def _data_config(frame: pd.DataFrame) -> dict:
+    config = {column: money() for column in _amount_columns(frame)}
+    config.update(
+        {column: percent() for column in SHARE_COLUMNS if column in frame.columns}
+    )
+    return config
 
 
 def _questions(summary, artifact) -> None:

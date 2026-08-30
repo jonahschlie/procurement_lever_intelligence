@@ -275,6 +275,7 @@ def _analysed_run(portfolio_xlsx):
     from agents.spend_addressability import AddressabilityProposal
     from agents.supplier_matching import SupplierMatchProposal
     from classification.spend_classification import run_spend_classification
+    from companies.normalization import confirm_companies, run_company_normalization
     from fx.currency import run_currency
     from fx.ecb import parse_ecb_csv
     from profiling.data_profiling import confirm_profiling as _confirm
@@ -286,6 +287,8 @@ def _analysed_run(portfolio_xlsx):
         run_id,
         parse_ecb_csv("Date,SEK,\n2025-01-10,11.50,\n2025-02-03,11.40,\n2025-03-03,11.30,\n"),
     )
+    run_company_normalization(run_id)
+    confirm_companies(run_id)
     run_supplier_normalization(run_id, client=FakeClient(SupplierMatchProposal(verdicts=[])))
     run_spend_classification(run_id, client=FakeClient(AddressabilityProposal(verdicts=[])))
     return run_id
@@ -316,9 +319,10 @@ def test_review_screen_gathers_every_decision_behind_one_button(run_root, portfo
     headings = [h.value for h in app.subheader]
     # Block 1 is conditional by design: this workbook holds no total rows, so it
     # is not shown at all rather than shown empty.
-    assert any(h.startswith("2 ·") for h in headings)  # intercompany
-    assert any(h.startswith("3 ·") for h in headings)  # suppliers
-    assert any(h.startswith("4 ·") for h in headings)  # currencies
+    assert any(h.startswith("2 ·") for h in headings)  # companies
+    assert any(h.startswith("3 ·") for h in headings)  # intercompany
+    assert any(h.startswith("4 ·") for h in headings)  # suppliers
+    assert any(h.startswith("5 ·") for h in headings)  # currencies
     # One confirmation for all of it.
     assert [b.label for b in app.button] == ["Confirm and continue"]
 
@@ -465,3 +469,6 @@ def test_summary_page_shows_six_tabs(run_root, lever_run):
     # quietly on the overview, prominently above the top levers.
     assert any("assumptions, not findings" in c.value for c in app.caption)
     assert any("assumptions, not findings" in w.value for w in app.warning)
+    # The overview shows figures and tables, not only bullet points.
+    assert len(app.metric) > 4
+    assert app.dataframe

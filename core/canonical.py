@@ -14,6 +14,8 @@ description.
 from dataclasses import dataclass
 from typing import Literal
 
+import pandas as pd
+
 # What a field is for, which decides how its absence is treated.
 #
 #   core      nothing works without it -- absence is a serious finding
@@ -221,3 +223,46 @@ _BY_KEY = {field.key: field for field in CANONICAL_FIELDS}
 
 def field_by_key(key: str) -> CanonicalField:
     return _BY_KEY[key]
+
+
+def company_key(table: pd.DataFrame) -> pd.Series:
+    """Which company a row belongs to, as everything downstream should ask.
+
+    The canonical name where company normalization has run, the raw name from the
+    export where it has not. A run written before that stage existed therefore
+    groups exactly as it always did.
+    """
+    normalized = table.get("company_normalized")
+    raw = table["company_name"].astype(str).str.strip()
+    if normalized is None:
+        return raw
+    canonical = normalized.astype(str).str.strip()
+    return canonical.where(canonical != "", raw)
+
+
+# What makes two rows the same booking posted twice.
+DUPLICATE_FIELDS = ("supplier", "amount_local", "posting_date", "invoice_number")
+
+
+def company_identity(table: pd.DataFrame) -> pd.Series:
+    """A company key that is unique across submissions, not just within one.
+
+    The canonical id where company normalization has run, the export's own code
+    where it has not. Two ERPs both numbering their entities from 1000 would
+    otherwise make bookings of unrelated companies look identical.
+    """
+    canonical = table.get("company_canonical_id")
+    raw = table["company"].astype(str).str.strip()
+    if canonical is None:
+        return raw
+    canonical = canonical.astype(str).str.strip()
+    return canonical.where(canonical != "", raw)
+
+
+def duplicate_key(table: pd.DataFrame) -> pd.DataFrame:
+    """The columns that together identify one booking, for duplicate detection."""
+    frame = pd.DataFrame({"company": company_identity(table)}, index=table.index)
+    for column in DUPLICATE_FIELDS:
+        if column in table.columns:
+            frame[column] = table[column]
+    return frame

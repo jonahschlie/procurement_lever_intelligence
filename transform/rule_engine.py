@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
+from core.canonical import duplicate_key
 from core.models import RuleEffect, RuleReport
 from core.run import get_logger, record_step, step_path
 from core.table import load_table, write_table
@@ -137,7 +138,6 @@ def _flags(
     ] = True
 
     invoices = table["invoice_number"].astype(str).str.strip()
-    key = ["company", "supplier", "amount_local", "posting_date", "invoice_number"]
 
     return {
         "flag_missing_supplier": empty["supplier"],
@@ -150,7 +150,7 @@ def _flags(
         "flag_future_date": posting > pd.Timestamp(datetime.now(timezone.utc).date()),
         "flag_date_order": posting.notna() & document.notna() & (posting < document),
         "flag_duplicate_document": invoices.duplicated(keep=False) & (invoices != ""),
-        "flag_duplicate_transaction": table.duplicated(subset=key, keep=False),
+        "flag_duplicate_transaction": duplicate_key(table).duplicated(keep=False),
         "flag_aggregate_row": aggregate,
         # Text was present but could not be read as a number or a date.
         "flag_unparsable_amount": (~empty_text(table["amount_local"])) & local.isna(),

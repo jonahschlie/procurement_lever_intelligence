@@ -272,6 +272,36 @@ class CurrencyReport(BaseModel):
     breakdown: list[CurrencyBreakdown]
 
 
+class CompanyMember(BaseModel):
+    """One spelling of a company, as one dataset wrote it."""
+
+    dataset_id: str
+    code: str
+    name: str
+    row_count: int
+
+
+class CompanyGroup(BaseModel):
+    """One legal entity and the spellings and codes the exports use for it."""
+
+    group_id: int
+    canonical_name: str
+    canonical_id: str
+    members: list[CompanyMember]
+    row_count: int
+    source: Literal["code", "name", "single", "user"]
+    comment: str
+    # Same code, unrelated names: two ERPs numbering their entities from 1000
+    # would otherwise merge two different companies without anyone noticing.
+    code_collision: bool = False
+    approved: bool = True
+
+
+class CompanyNormalizationArtifact(BaseModel):
+    distinct_names: int
+    groups: list[CompanyGroup] = []
+
+
 class SupplierGroup(BaseModel):
     """One proposed canonical supplier and the raw names it absorbs."""
 
@@ -427,11 +457,23 @@ class LeverArtifact(BaseModel):
 
 
 class SummarySection(BaseModel):
-    """One stage's outcome, as a headline plus the facts behind it."""
+    """One stage's outcome: a headline sentence, its key figures, its detail.
+
+    A wall of metrics reads well and says little, so the headline always carries
+    the meaning and the rest carries the evidence. Metrics and rows are optional
+    -- a section that has nothing tabular to show still renders from facts, and a
+    summary written before these fields existed still loads.
+
+    Row values stay numeric where they are numeric. A column whose label ends in
+    (EUR) holds money, which is what the screens and the later export key on to
+    format it.
+    """
 
     title: str
     headline: str
     facts: list[str] = []
+    metrics: list[tuple[str, str]] = []
+    rows: list[dict[str, str | float | int]] = []
 
 
 class SmeQuestionRecord(BaseModel):

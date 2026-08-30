@@ -199,3 +199,105 @@ def test_a_rejected_group_does_not_inherit_a_contract_status(name_run, monkeypat
 
     rows = load_table(name_run).set_index("source_row")
     assert rows.loc["2", "supplier_contract_status"] == "unknown"
+
+
+# --- editing the groups by hand ---------------------------------------------
+#
+# Approving and renaming cannot move a name between groups, invent a group or
+# split one. An explicit name-to-group map can, and it has to leave the path
+# without one untouched.
+
+
+def test_confirming_without_a_map_is_exactly_what_it_was(name_run):
+    run_supplier_normalization(name_run, client=FakeClient(_same()))
+
+    plain = confirm_suppliers(name_run)
+    with_none = confirm_suppliers(name_run, assignments=None)
+
+    assert plain.model_dump() == with_none.model_dump()
+    assert {g.source for g in plain.groups} <= {"deterministic", "ai", "ai_unsure"}
+
+
+def test_a_name_moved_by_hand_lands_in_the_other_group(name_run):
+    artifact = run_supplier_normalization(name_run, client=FakeClient(_same()))
+    assignments = {
+        member: group.canonical_name
+        for group in artifact.groups
+        for member in group.members
+    }
+    assignments["Sopra Steria SA"] = "Atlas Freight & Logistics"
+
+    confirmed = confirm_suppliers(name_run, assignments=assignments)
+
+    atlas = next(g for g in confirmed.groups if g.canonical_name == "Atlas Freight & Logistics")
+    assert "Sopra Steria SA" in atlas.members
+    assert atlas.source == "user"
+    # And the table follows the decision.
+    table = load_table(name_run).set_index("source_row")
+    assert table.loc["7", "supplier_normalized"] == "Atlas Freight & Logistics"
+
+
+def test_a_label_nobody_proposed_becomes_a_group(name_run):
+    artifact = run_supplier_normalization(name_run, client=FakeClient(_same()))
+    assignments = {
+        member: "Atlas Group"
+        for group in artifact.groups
+        for member in group.members
+        if "atlas" in member.lower()
+    }
+
+    confirmed = confirm_suppliers(name_run, assignments=assignments)
+
+    invented = next(g for g in confirmed.groups if g.canonical_name == "Atlas Group")
+    assert len(invented.members) == 3
+    assert invented.approved
+
+
+def test_splitting_a_group_leaves_each_name_on_its_own(name_run):
+    artifact = run_supplier_normalization(name_run, client=FakeClient(_same()))
+    atlas = next(g for g in artifact.groups if "Atlas Frght & Log." in g.members)
+
+    # An empty cell means "this name is its own supplier".
+    confirmed = confirm_suppliers(name_run, assignments={member: "" for member in atlas.members})
+
+    names = {g.canonical_name for g in confirmed.groups}
+    assert set(atlas.members) <= names
+    table = load_table(name_run).set_index("source_row")
+    assert table.loc["5", "supplier_normalized"] == "Atlas Frght & Log."
+
+
+def test_a_regrouped_supplier_keeps_the_master_entry_it_caught(name_run, monkeypatch):
+    monkeypatch.setattr(normalization, "_load_master", _master_with_contracts)
+    artifact = run_supplier_normalization(name_run, client=FakeClient(_same()))
+    assignments = {
+        member: "Atlas Group"
+        for group in artifact.groups
+        for member in group.members
+        if "atlas" in member.lower()
+    }
+
+    confirmed = confirm_suppliers(name_run, assignments=assignments)
+
+    atlas = next(g for g in confirmed.groups if g.canonical_name == "Atlas Group")
+    # Country and contract status may only come from the master, so the master
+    # entry survives the regrouping.
+    assert atlas.master_id == "SUP-1"
+    assert atlas.country == "SE"
+    assert atlas.contract_on_file is True
+
+
+def test_an_intercompany_mark_carries_into_the_group_built_by_hand(name_run):
+    artifact = run_supplier_normalization(name_run, client=FakeClient(_same()))
+    atlas = next(g for g in artifact.groups if "Atlas Frght & Log." in g.members)
+    assignments = {
+        member: group.canonical_name
+        for group in artifact.groups
+        for member in group.members
+    }
+
+    confirmed = confirm_suppliers(
+        name_run, intercompany={atlas.group_id: True}, assignments=assignments
+    )
+
+    rebuilt = next(g for g in confirmed.groups if "Atlas Frght & Log." in g.members)
+    assert rebuilt.is_intercompany

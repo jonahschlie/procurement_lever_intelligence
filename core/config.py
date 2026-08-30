@@ -32,6 +32,13 @@ CATEGORY_DEPENDENCY_RATIO = 0.9
 # Findings quote a handful of source rows so a reviewer can look them up.
 MAX_FINDING_EXAMPLES = 5
 
+# A row whose amount restates the block around it is a subtotal even when it kept
+# its posting date and document number. The tolerance absorbs rounding in the
+# source; the minimum block size stops a handful of similar bookings from
+# nominating each other.
+AGGREGATE_SUM_TOLERANCE = 0.005
+AGGREGATE_SUM_MIN_ROWS = 4
+
 
 def runs_dir() -> Path:
     return Path(os.getenv("PLI_RUNS_DIR", "runs")).expanduser()

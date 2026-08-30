@@ -8,6 +8,7 @@ Every section degrades on its own. A run that stopped after profiling produces a
 shorter summary rather than an error.
 """
 
+from collections import Counter
 from pathlib import Path
 
 import pandas as pd
@@ -84,12 +85,27 @@ def _ingestion(run_id: str) -> SummarySection | None:
         )
         facts.append(f"{workbook.original_filename}: {roles}")
     datasets = artifact.datasets
+    rows = [
+        {
+            "Source": workbook.original_filename,
+            "Sheet": entry.sheet or "single table",
+            "Role": entry.role,
+        }
+        for workbook in artifact.workbooks
+        for entry in workbook.classifications
+    ]
     return SummarySection(
         title="What was submitted",
         headline=(
             f"{len(artifact.workbooks)} file(s), {len(datasets)} dataset(s) worth analysing"
         ),
         facts=facts[:MAX_FACTS],
+        metrics=[
+            ("Files", str(len(artifact.workbooks))),
+            ("Sheets found", str(len(rows))),
+            ("Analysed", str(len(datasets))),
+        ],
+        rows=rows,
     )
 
 
@@ -108,15 +124,23 @@ def _mapping(run_id: str) -> SummarySection | None:
     unmapped = [field_by_key(m.canonical_field).label for m in dataset.mappings if not m.source_column]
     by_user = sum(1 for m in dataset.mappings if m.decided_by == "user")
 
-    facts = [f"{len(mapped)} of {len(CANONICAL_FIELDS)} canonical fields matched to a column"]
-    if unmapped:
-        facts.append("Left empty: " + ", ".join(unmapped[:8]))
+    facts = []
     if by_user:
         facts.append(f"{by_user} field(s) corrected by hand")
     return SummarySection(
         title="How the columns were understood",
         headline=f"{len(mapped)} fields mapped, {len(unmapped)} left empty",
         facts=facts,
+        metrics=[
+            ("Fields mapped", f"{len(mapped)} of {len(CANONICAL_FIELDS)}"),
+            ("Left empty", str(len(unmapped))),
+            ("Corrected by hand", str(by_user)),
+        ],
+        rows=[
+            {"Canonical field": m.canonical_field, "Column in the export": m.source_column}
+            for m in dataset.mappings
+            if m.source_column
+        ],
     )
 
 
@@ -129,14 +153,24 @@ def _quality(run_id: str, table: pd.DataFrame) -> SummarySection | None:
     serious = [f for f in report.findings if f.severity == "high"]
     excluded = sum(1 for c in report.aggregate_candidates if c.exclude)
 
-    facts = [f"{f.check}: {f.result}" for f in serious[:MAX_FACTS]]
+    facts = []
     if excluded:
         facts.append(f"{excluded} total row(s) excluded from spend, flagged not deleted")
     facts.append(report.category_decision)
+    by_severity = Counter(f.severity for f in report.findings)
     return SummarySection(
         title="What the data quality checks found",
         headline=f"{len(report.findings)} findings, {len(serious)} of them serious",
         facts=facts,
+        metrics=[
+            ("Serious", str(by_severity["high"])),
+            ("Worth a look", str(by_severity["medium"])),
+            ("Noted", str(by_severity["low"] + by_severity["info"])),
+        ],
+        rows=[
+            {"Check": f.check, "Finding": f.result, "Rows": f.affected_rows}
+            for f in serious[:MAX_FACTS]
+        ],
     )
 
 
@@ -146,11 +180,8 @@ def _currency(run_id: str) -> SummarySection | None:
     if not has_report(run_id):
         return None
     report = load_report(run_id)
-    currencies = ", ".join(entry.currency for entry in report.breakdown)
     facts = [
-        f"Currencies in the data: {currencies}",
         f"Converted at {report.rate_source} daily rates ({report.rates_frozen_to}), frozen into the run",
-        f"Gross {report.spend_gross_eur:,.0f} EUR less {report.credit_volume_eur:,.0f} in credit notes",
     ]
     if report.group_unconverted_rows:
         facts.append(
@@ -161,6 +192,25 @@ def _currency(run_id: str) -> SummarySection | None:
         title="What the currency conversion changed",
         headline=f"Net spend {report.spend_net_eur:,.0f} EUR",
         facts=facts,
+        metrics=[
+            ("Currencies", str(len(report.breakdown))),
+            ("Gross spend (EUR)", f"{report.spend_gross_eur:,.0f}"),
+            ("Credit notes (EUR)", f"{report.credit_volume_eur:,.0f}"),
+        ],
+        rows=[
+            {
+                "Currency": entry.currency,
+                "Rows": entry.rows,
+                "Sum (local)": entry.sum_local,
+                "Rate range": (
+                    f"{entry.rate_min:,.4f} - {entry.rate_max:,.4f}"
+                    if entry.rate_min is not None
+                    else "-"
+                ),
+                "Sum (EUR)": entry.sum_eur,
+            }
+            for entry in report.breakdown
+        ],
     )
 
 
@@ -174,10 +224,7 @@ def _suppliers(run_id: str, table: pd.DataFrame) -> SummarySection | None:
     intercompany = [g for g in approved if g.is_intercompany]
     by_user = sum(1 for g in artifact.groups if g.source == "user")
 
-    facts = [
-        f"{artifact.distinct_names} raw names resolved to {len(approved)} suppliers",
-        f"{len(intercompany)} of them are the group's own entities",
-    ]
+    facts = []
     if by_user:
         facts.append(f"{by_user} grouping(s) decided by hand")
     if not table.empty and "supplier_contract_status" in table.columns:
@@ -191,8 +238,20 @@ def _suppliers(run_id: str, table: pd.DataFrame) -> SummarySection | None:
             facts.append(f"{without / total:.1%} of third party spend has no contract on file")
     return SummarySection(
         title="Who the suppliers are",
-        headline=f"{len(approved)} canonical suppliers",
+        headline=(
+            f"{artifact.distinct_names} raw names resolved to {len(approved)} suppliers, "
+            f"{len(intercompany)} of them the group's own entities"
+        ),
         facts=facts,
+        metrics=[
+            ("Raw names", str(artifact.distinct_names)),
+            ("Canonical suppliers", str(len(approved))),
+            ("Intercompany", str(len(intercompany))),
+        ],
+        rows=[
+            {"Supplier": g.canonical_name, "Names merged": len(g.members), "Rows": g.row_count}
+            for g in sorted(approved, key=lambda g: -g.row_count)[:MAX_FACTS]
+        ],
     )
 
 
@@ -206,10 +265,7 @@ def _levers(run_id: str) -> SummarySection | None:
     quantified = [l for l in artifact.levers if l.status == "quantified" and l.kind in SPEND_KINDS]
     blocked = [l for l in artifact.levers if l.status == "not_assessable"]
 
-    facts = [
-        f"{lever.name}: {lever.potential_base:,.0f} EUR on {lever.net_base:,.0f} of spend"
-        for lever in quantified[:MAX_FACTS]
-    ]
+    facts = []
     if blocked:
         facts.append(f"{len(blocked)} lever(s) could not be assessed from this data")
     return SummarySection(
@@ -219,6 +275,20 @@ def _levers(run_id: str) -> SummarySection | None:
             f"({artifact.total_low:,.0f} to {artifact.total_high:,.0f})"
         ),
         facts=facts,
+        metrics=[
+            ("Potential, base (EUR)", f"{artifact.total_base:,.0f}"),
+            ("Quantified levers", str(len(quantified))),
+            ("Not assessable", str(len(blocked))),
+        ],
+        rows=[
+            {
+                "Lever": lever.name,
+                "Applies to (EUR)": lever.net_base,
+                "Rate": f"{lever.rate_base:.0%}",
+                "Potential (EUR)": lever.potential_base,
+            }
+            for lever in quantified[:MAX_FACTS]
+        ],
     )
 
 

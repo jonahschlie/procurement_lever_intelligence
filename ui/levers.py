@@ -12,6 +12,7 @@ from core.config import LEVER_PRECEDENCE
 from core.table import load_table
 from levers.definitions import BY_ID
 from levers.engine import has_artifact, load_artifact
+from ui.format import as_money, eur, eur_compact, money
 
 LEVEL_ICON = {"low": "🟢", "medium": "🟠", "high": "🔴"}
 CONFIDENCE_ICON = {"high": "🟢", "medium": "🟠", "low": "🔴"}
@@ -67,12 +68,16 @@ def _build_summary(run_id: str) -> None:
 
 def _headline(artifact, found: int, total: int) -> None:
     left, middle, right = st.columns(3)
-    left.metric("Potential — low", f"{artifact.total_low:,.0f}")
-    middle.metric("Potential — base", f"{artifact.total_base:,.0f}")
-    right.metric("Potential — high", f"{artifact.total_high:,.0f}")
+    left.metric("Potential — low", eur_compact(artifact.total_low), help=eur(artifact.total_low))
+    middle.metric(
+        "Potential — base", eur_compact(artifact.total_base), help=eur(artifact.total_base)
+    )
+    right.metric(
+        "Potential — high", eur_compact(artifact.total_high), help=eur(artifact.total_high)
+    )
     base = artifact.total_base / artifact.addressable_spend if artifact.addressable_spend else 0
     st.caption(
-        f"EUR, against {artifact.addressable_spend:,.0f} of addressable spend "
+        f"EUR, against {eur(artifact.addressable_spend)} of addressable spend "
         f"({base:.1%} in the base case). Every euro counts towards one lever only. "
         f"{found} of {total} levers in the standard catalogue are quantified here; "
         "the rest are listed below with the reason."
@@ -88,22 +93,27 @@ def _headline(artifact, found: int, total: int) -> None:
 def _priority(artifact, quantified) -> None:
     st.subheader("Priority")
     st.dataframe(
-        pd.DataFrame(
-            [
-                {
-                    "#": rank,
-                    "Lever": lever.name,
-                    "Spend it applies to": round(lever.net_base, 0),
-                    "Potential (base)": round(lever.potential_base, 0),
-                    "Range": f"{lever.potential_low:,.0f} – {lever.potential_high:,.0f}",
-                    "Effort": f"{LEVEL_ICON[lever.effort]} {lever.effort}",
-                    "Confidence": f"{CONFIDENCE_ICON[lever.confidence]} {lever.confidence}",
-                }
-                for rank, lever in enumerate(quantified, start=1)
-            ]
+        as_money(
+            pd.DataFrame(
+                [
+                    {
+                        "#": rank,
+                        "Lever": lever.name,
+                        "Spend it applies to": lever.net_base,
+                        "Potential (base)": lever.potential_base,
+                        "Range": f"{eur(lever.potential_low)} – {eur(lever.potential_high)}",
+                        "Effort": f"{LEVEL_ICON[lever.effort]} {lever.effort}",
+                        "Confidence": f"{CONFIDENCE_ICON[lever.confidence]} {lever.confidence}",
+                    }
+                    for rank, lever in enumerate(quantified, start=1)
+                ]
+            ),
+            "Spend it applies to",
+            "Potential (base)",
         ),
         width="stretch",
         hide_index=True,
+        column_config={"Spend it applies to": money(), "Potential (base)": money()},
     )
     st.caption("Ranked by potential in the base case; ties go to the lever needing less coordination.")
 
@@ -122,7 +132,7 @@ def _priority(artifact, quantified) -> None:
 
 def _lever(rank: int, lever, table: pd.DataFrame) -> None:
     with st.expander(
-        f"{rank} · {lever.name} — {lever.potential_base:,.0f} EUR (base)", expanded=rank == 1
+        f"{rank} · {lever.name} — {eur(lever.potential_base)} EUR (base)", expanded=rank == 1
     ):
         st.markdown(f"*{lever.mechanism}*")
         if lever.opportunity:
@@ -134,30 +144,35 @@ def _lever(rank: int, lever, table: pd.DataFrame) -> None:
 
         st.markdown("**How the figure is built**")
         st.dataframe(
-            pd.DataFrame(
-                [
-                    {
-                        "Scenario": name,
-                        "Spend it applies to": round(lever.net_base, 0),
-                        "Rate": f"{rate:.0%}",
-                        "Potential (EUR)": round(lever.net_base * rate, 0),
-                    }
-                    for name, rate in (
-                        ("Low", lever.rate_low),
-                        ("Base", lever.rate_base),
-                        ("High", lever.rate_high),
-                    )
-                ]
+            as_money(
+                pd.DataFrame(
+                    [
+                        {
+                            "Scenario": name,
+                            "Spend it applies to": lever.net_base,
+                            "Rate": f"{rate:.0%}",
+                            "Potential (EUR)": lever.net_base * rate,
+                        }
+                        for name, rate in (
+                            ("Low", lever.rate_low),
+                            ("Base", lever.rate_base),
+                            ("High", lever.rate_high),
+                        )
+                    ]
+                ),
+                "Spend it applies to",
+                "Potential (EUR)",
             ),
             width="stretch",
             hide_index=True,
+            column_config={"Spend it applies to": money(), "Potential (EUR)": money()},
         )
         claimed = lever.gross_base - lever.net_base
         if claimed > 0:
             st.caption(
-                f"On its own the lever covers {lever.gross_base:,.0f} EUR. "
-                f"{claimed:,.0f} of that is counted under a more specific lever, so only "
-                f"{lever.net_base:,.0f} is credited here."
+                f"On its own the lever covers {eur(lever.gross_base)} EUR. "
+                f"{eur(claimed)} of that is counted under a more specific lever, so only "
+                f"{eur(lever.net_base)} is credited here."
             )
 
         st.markdown(
@@ -169,20 +184,24 @@ def _lever(rank: int, lever, table: pd.DataFrame) -> None:
         if lever.contributors:
             st.markdown("**Largest contributors**")
             st.dataframe(
-                pd.DataFrame(
-                    [
-                        {
-                            "Supplier": c.supplier,
-                            "Spend (EUR)": round(c.spend, 0),
-                            "Companies": c.companies,
-                            "Bookings": c.rows,
-                            "Contract": c.contract_status or "-",
-                        }
-                        for c in lever.contributors
-                    ]
+                as_money(
+                    pd.DataFrame(
+                        [
+                            {
+                                "Supplier": c.supplier,
+                                "Spend (EUR)": c.spend,
+                                "Companies": c.companies,
+                                "Bookings": c.rows,
+                                "Contract": c.contract_status or "-",
+                            }
+                            for c in lever.contributors
+                        ]
+                    ),
+                    "Spend (EUR)",
                 ),
                 width="stretch",
                 hide_index=True,
+                column_config={"Spend (EUR)": money()},
             )
 
         _bookings(lever, table)
@@ -301,20 +320,24 @@ def _benchmark(artifact) -> None:
         return
     st.subheader("Where to start: the companies compared")
     st.dataframe(
-        pd.DataFrame(
-            [
-                {
-                    "Company": e.company,
-                    "Spend (EUR)": round(e.spend, 0),
-                    "Suppliers": e.suppliers,
-                    "PO coverage": f"{e.po_coverage:.1%}",
-                    "Without contract": f"{e.uncontracted_share:.1%}",
-                }
-                for e in artifact.benchmark
-            ]
+        as_money(
+            pd.DataFrame(
+                [
+                    {
+                        "Company": e.company,
+                        "Spend (EUR)": e.spend,
+                        "Suppliers": e.suppliers,
+                        "PO coverage": f"{e.po_coverage:.1%}",
+                        "Without contract": f"{e.uncontracted_share:.1%}",
+                    }
+                    for e in artifact.benchmark
+                ]
+            ),
+            "Spend (EUR)",
         ),
         width="stretch",
         hide_index=True,
+        column_config={"Spend (EUR)": money()},
     )
     st.caption(
         "Sorted by the share of spend without a contract. The spread between companies is "

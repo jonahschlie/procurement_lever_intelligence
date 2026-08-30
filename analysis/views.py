@@ -6,6 +6,8 @@ same figures from the same numbers.
 
 import pandas as pd
 
+from core.canonical import company_key
+
 
 def addressable(table: pd.DataFrame) -> pd.DataFrame:
     """Negotiable spend with a named supplier -- the population every view uses."""
@@ -43,9 +45,10 @@ def contract_coverage(rows: pd.DataFrame) -> pd.DataFrame:
     if rows.empty or "supplier_contract_status" not in rows.columns:
         return pd.DataFrame(columns=["company", "status", "spend"])
     frame = (
-        rows.groupby(["company_name", "supplier_contract_status"], as_index=False)["amount_eur"]
+        rows.assign(company=company_key(rows))
+        .groupby(["company", "supplier_contract_status"], as_index=False)["amount_eur"]
         .sum()
-        .rename(columns={"company_name": "company", "amount_eur": "spend"})
+        .rename(columns={"amount_eur": "spend"})
     )
     frame["status"] = frame["supplier_contract_status"].map(CONTRACT_LABELS).fillna("Not in the master")
     return frame[["company", "status", "spend"]]

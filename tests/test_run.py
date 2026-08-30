@@ -133,3 +133,26 @@ def test_steps_are_recorded_where_the_run_lives_not_where_its_id_says(run_root):
     assert [s.step for s in load_run("copied_run").steps] == ["ingestion"]
     # The run whose id sits inside the copied manifest is untouched.
     assert load_run(original.run_id).steps == []
+
+
+def test_a_stage_directory_written_before_a_stage_was_inserted_is_still_found(run_root):
+    """Inserting a pipeline stage renumbers the ones after it.
+
+    A run written before the insertion keeps its old numbers on disk. It has to
+    stay readable, so an existing directory for the stage wins over the number
+    that stage would get today.
+    """
+    from core.run import create_run, run_path, step_dir_name, step_path
+
+    run_id = create_run().run_id
+    current = step_dir_name("supplier_normalization")
+    legacy = run_path(run_id) / "08_supplier_normalization"
+    legacy.mkdir(parents=True)
+    (legacy / "supplier_normalization.json").write_text("{}", encoding="utf-8")
+
+    resolved = step_path(run_id, "supplier_normalization")
+
+    assert resolved == legacy
+    assert (resolved / "supplier_normalization.json").is_file()
+    # The stage really did move, so this is not a no-op test.
+    assert current != legacy.name

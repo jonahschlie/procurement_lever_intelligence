@@ -202,3 +202,96 @@ def test_step_and_log_are_recorded(defective_run):
     log = (run_path(defective_run) / "logs" / "run.log").read_text(encoding="utf-8")
     assert "profiling complete: " in log
     assert "2 aggregate row(s) to exclude" in log
+
+
+# --- the sum signal ---------------------------------------------------------
+#
+# A subtotal that kept its posting date, document number and GL account passes
+# both the marker and the shape test. What still gives it away is arithmetic.
+
+
+def _block(amounts, **overrides):
+    """A block of fully identified bookings, one row per amount."""
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        {
+            "dataset_id": ["ds1"] * len(amounts),
+            "source_row": [str(i + 2) for i in range(len(amounts))],
+            "company": ["1001"] * len(amounts),
+            "company_name": ["Helios Iberia"] * len(amounts),
+            "supplier": [f"Supplier {i}" for i in range(len(amounts))],
+            "posting_date": ["2025-01-15"] * len(amounts),
+            "invoice_number": [f"INV-{i}" for i in range(len(amounts))],
+            "gl_account": ["6000"] * len(amounts),
+            "gl_description": ["Consulting"] * len(amounts),
+            "category": [""] * len(amounts),
+            "amount_local": [str(a) for a in amounts],
+            "amount_group": [""] * len(amounts),
+        }
+    )
+    for column, values in overrides.items():
+        frame[column] = values
+    return frame, pd.Series(amounts, dtype=float)
+
+
+def test_a_subtotal_that_kept_its_identifiers_is_caught_by_arithmetic():
+    from profiling.data_profiling import _aggregate_candidates
+
+    # Five bookings and, below them, their total -- fully identified throughout.
+    table, amount = _block([100.0, 250.0, 300.0, 175.0, 225.0, 1050.0])
+
+    candidates = _aggregate_candidates(table, amount)
+
+    assert [c.source_row for c in candidates] == ["7"]
+    assert "matches the sum of the other 5 rows" in candidates[0].reasons[0]
+
+
+def test_the_sum_signal_proposes_but_never_preticks():
+    from profiling.data_profiling import _aggregate_candidates
+
+    table, amount = _block([100.0, 250.0, 300.0, 175.0, 225.0, 1050.0])
+
+    # Nothing about it is certain enough to exclude spend without being asked.
+    assert _aggregate_candidates(table, amount)[0].exclude is False
+
+
+def test_rounding_in_the_source_still_matches():
+    from profiling.data_profiling import _aggregate_candidates
+
+    table, amount = _block([100.0, 250.0, 300.0, 175.0, 225.0, 1052.0])
+
+    assert len(_aggregate_candidates(table, amount)) == 1
+
+
+def test_a_block_too_small_to_be_summarised_nominates_nobody():
+    from profiling.data_profiling import _aggregate_candidates
+
+    # Three bookings and their total: too few to tell a subtotal from a coincidence.
+    table, amount = _block([100.0, 250.0, 300.0, 650.0])
+
+    assert _aggregate_candidates(table, amount) == []
+
+
+def test_ordinary_bookings_of_similar_size_are_left_alone():
+    from profiling.data_profiling import _aggregate_candidates
+
+    table, amount = _block([200.0, 200.0, 200.0, 200.0, 200.0, 200.0])
+
+    assert _aggregate_candidates(table, amount) == []
+
+
+def test_a_row_already_recognised_is_not_counted_into_the_sums():
+    from profiling.data_profiling import _aggregate_candidates
+
+    # A grand total sits in the same block. Left in the sums it would hide the
+    # subtotal; excluded, both are found -- the total by its marker, the
+    # subtotal by arithmetic.
+    table, amount = _block([100.0, 250.0, 300.0, 175.0, 225.0, 1050.0, 1050.0])
+    table.loc[6, "supplier"] = "*** GRAND TOTAL ***"
+
+    rows = {c.source_row: c.reasons for c in _aggregate_candidates(table, amount)}
+
+    assert set(rows) == {"7", "8"}
+    assert "matches the sum" in rows["7"][0]
+    assert "marker" in rows["8"][0]

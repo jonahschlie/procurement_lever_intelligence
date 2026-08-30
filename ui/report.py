@@ -15,6 +15,7 @@ from fx.currency import has_report as has_currency
 from fx.currency import load_report as load_currency
 from profiling.data_profiling import load_report as load_profile
 from suppliers.normalization import has_confirmed, load_confirmed
+from ui.format import as_money, eur, eur_compact, money
 
 SEVERITY_ICON = {"high": "🔴", "medium": "🟠", "low": "🟡", "info": "⚪"}
 
@@ -52,7 +53,7 @@ def _identify_levers(run_id: str) -> None:
 
             artifact = load_artifact(run_id)
         status.update(
-            label=f"{len(artifact.levers)} levers, {artifact.total_base:,.0f} EUR (base)",
+            label=f"{len(artifact.levers)} levers, {eur(artifact.total_base)} EUR (base)",
             state="complete",
         )
     st.session_state["switch_to"] = "levers"
@@ -64,27 +65,34 @@ def _chain(report) -> None:
     steps = {step.label: step for step in report.chain}
 
     left, middle, right = st.columns(3)
-    left.metric("Net spend (EUR)", f"{steps['Net spend'].amount:,.0f}")
-    middle.metric("Third party (EUR)", f"{steps['Third party spend'].amount:,.0f}")
-    right.metric("Addressable (EUR)", f"{steps['Addressable spend'].amount:,.0f}")
+    for column, label, step in (
+        (left, "Net spend", "Net spend"),
+        (middle, "Third party", "Third party spend"),
+        (right, "Addressable", "Addressable spend"),
+    ):
+        amount = steps[step].amount
+        column.metric(f"{label} (EUR)", eur_compact(amount), help=eur(amount))
 
     total = steps["Net spend"].amount or 1
     st.dataframe(
-        pd.DataFrame(
-            [
-                {
-                    "": "−" if step.delta else "=",
-                    "Step": step.label,
-                    "EUR": round(step.amount, 0),
-                    "Share of net": f"{step.amount / total:.1%}",
-                    "Note": step.note,
-                }
-                for step in report.chain
-            ]
+        as_money(
+            pd.DataFrame(
+                [
+                    {
+                        "": "−" if step.delta else "=",
+                        "Step": step.label,
+                        "EUR": step.amount,
+                        "Share of net": f"{step.amount / total:.1%}",
+                        "Note": step.note,
+                    }
+                    for step in report.chain
+                ]
+            ),
+            "EUR",
         ),
         width="stretch",
         hide_index=True,
-        column_config={"": st.column_config.TextColumn(width="small")},
+        column_config={"": st.column_config.TextColumn(width="small"), "EUR": money()},
     )
     st.caption(
         f"{report.rows_analysed:,} of {report.rows_total:,} rows enter the analysis. "
@@ -100,22 +108,29 @@ def _currency(run_id: str) -> None:
 
     st.subheader("What the currency conversion changed")
     st.dataframe(
-        pd.DataFrame(
-            [
-                {
-                    "Currency": e.currency,
-                    "Rows": e.rows,
-                    "Sum (local)": round(e.sum_local, 2),
-                    "Rate range": (
-                        f"{e.rate_min:,.4f} – {e.rate_max:,.4f}" if e.rate_min is not None else "-"
-                    ),
-                    "Sum (EUR)": round(e.sum_eur, 2),
-                }
-                for e in report.breakdown
-            ]
+        as_money(
+            pd.DataFrame(
+                [
+                    {
+                        "Currency": e.currency,
+                        "Rows": e.rows,
+                        "Sum (local)": e.sum_local,
+                        "Rate range": (
+                            f"{e.rate_min:,.4f} – {e.rate_max:,.4f}"
+                            if e.rate_min is not None
+                            else "-"
+                        ),
+                        "Sum (EUR)": e.sum_eur,
+                    }
+                    for e in report.breakdown
+                ]
+            ),
+            "Sum (local)",
+            "Sum (EUR)",
         ),
         width="stretch",
         hide_index=True,
+        column_config={"Sum (local)": money(), "Sum (EUR)": money()},
     )
     st.caption(
         f"Converted at {report.rate_source} daily rates ({report.rates_frozen_to}, frozen into "
@@ -186,20 +201,24 @@ def _suppliers(run_id: str, report, table: pd.DataFrame) -> None:
     by_status = eligible.groupby("supplier_contract_status")["amount_eur"].sum()
     st.caption("Contract coverage of third party spend")
     st.dataframe(
-        pd.DataFrame(
-            [
-                {
-                    "Contract": label,
-                    "Spend (EUR)": round(float(by_status.get(key, 0.0)), 0),
-                    "Share": f"{float(by_status.get(key, 0.0)) / total:.1%}",
-                }
-                for key, label in (
-                    ("no", "None on file"),
-                    ("yes", "On file"),
-                    ("unknown", "Not in the master"),
-                )
-            ]
+        as_money(
+            pd.DataFrame(
+                [
+                    {
+                        "Contract": label,
+                        "Spend (EUR)": float(by_status.get(key, 0.0)),
+                        "Share": f"{float(by_status.get(key, 0.0)) / total:.1%}",
+                    }
+                    for key, label in (
+                        ("no", "None on file"),
+                        ("yes", "On file"),
+                        ("unknown", "Not in the master"),
+                    )
+                ]
+            ),
+            "Spend (EUR)",
         ),
         width="stretch",
         hide_index=True,
+        column_config={"Spend (EUR)": money()},
     )

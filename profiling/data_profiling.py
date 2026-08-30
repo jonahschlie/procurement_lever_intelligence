@@ -14,6 +14,8 @@ import pandas as pd
 
 from core.canonical import CANONICAL_FIELDS, field_by_key
 from core.config import (
+    AGGREGATE_SUM_MIN_ROWS,
+    AGGREGATE_SUM_TOLERANCE,
     CATEGORY_DEPENDENCY_RATIO,
     MAX_FINDING_EXAMPLES,
     MISSING_HIGH_RATIO,
@@ -57,6 +59,13 @@ _MARKER_PATTERN = re.compile(
     r"\b(?:" + "|".join(re.escape(marker) for marker in TOTAL_MARKERS) + r")\b"
 )
 MARKER_FIELDS = ("supplier", "company_name", "gl_description", "category", "invoice_number")
+
+# Where a subtotal would sit. A block is the set of rows a total would summarise,
+# so the sum signal is tested once per grouping a ledger export commonly uses.
+AGGREGATE_BLOCKS = (
+    (("dataset_id", "company"), "the same company"),
+    (("dataset_id", "company", "gl_account"), "the same company and GL account"),
+)
 
 # GL text that names an account without saying anything about what was bought.
 LOW_VALUE_GL = (
@@ -401,9 +410,12 @@ def _semantic(table: pd.DataFrame) -> list[Finding]:
 def _aggregate_candidates(table: pd.DataFrame, amount: pd.Series) -> list[AggregateCandidate]:
     """Rows that restate other rows rather than recording a booking.
 
-    Two independent signals, either of which makes a row a candidate: a total
-    marker in a text field, or an amount sitting in a row that carries none of
-    the identifiers a real booking has.
+    Three independent signals, any of which makes a row a candidate: a total
+    marker in a text field, an amount sitting in a row that carries none of the
+    identifiers a real booking has, or an amount that equals the sum of the block
+    it sits in. The first two are language- and structure-based and catch the
+    common cases; the third is pure arithmetic and catches the subtotal that kept
+    its posting date, document number and GL account, which the other two miss.
     """
     has_amount = amount.notna()
 
@@ -422,13 +434,21 @@ def _aggregate_candidates(table: pd.DataFrame, amount: pd.Series) -> list[Aggreg
     ]
     structurally_empty = identifiers[0] & identifiers[1] & identifiers[2]
 
+    booked = amount.where(has_amount & ~markers & ~structurally_empty)
+    sum_matches = _sum_matches(table, booked)
+    matched = pd.Series(False, index=table.index)
+    if sum_matches:
+        matched.loc[list(sum_matches)] = True
+
     candidates = []
-    for position in table.index[has_amount & (markers | structurally_empty)]:
+    for position in table.index[has_amount & (markers | structurally_empty | matched)]:
         reasons = []
         if markers[position]:
             reasons.append(f"total marker in {marker_hits.get(position, 'a text field')}")
         if structurally_empty[position]:
             reasons.append("no posting date, document number or GL account")
+        if position in sum_matches:
+            reasons.append(sum_matches[position])
         row = table.loc[position]
         candidates.append(
             AggregateCandidate(
@@ -444,6 +464,36 @@ def _aggregate_candidates(table: pd.DataFrame, amount: pd.Series) -> list[Aggreg
             )
         )
     return candidates
+
+
+def _sum_matches(table: pd.DataFrame, amounts: pd.Series) -> dict[int, str]:
+    """Rows whose amount restates the block they sit in.
+
+    Only the largest amount of a block can equal the sum of the rest, so one
+    comparison per block settles it. Rows already recognised by another signal are
+    left out of the sums: a grand total inside a block would otherwise hide the
+    subtotal below it.
+    """
+    matches: dict[int, str] = {}
+    present = amounts.dropna()
+    for columns, label in AGGREGATE_BLOCKS:
+        if not set(columns) <= set(table.columns):
+            continue
+        keys = [table.loc[present.index, column].astype(str) for column in columns]
+        for _, block in present.groupby(keys, sort=False):
+            if len(block) <= AGGREGATE_SUM_MIN_ROWS:
+                continue
+            position = block.idxmax()
+            top = float(block.loc[position])
+            rest = float(block.sum()) - top
+            if top <= 0 or rest <= 0:
+                continue
+            if abs(top - rest) <= AGGREGATE_SUM_TOLERANCE * top:
+                matches.setdefault(
+                    position,
+                    f"amount matches the sum of the other {len(block) - 1} rows for {label}",
+                )
+    return matches
 
 
 def _candidate_label(row: pd.Series) -> str:

@@ -44,7 +44,9 @@ def group_entities(table: pd.DataFrame) -> list[str]:
     """The companies this analysis is about, as named by the data itself."""
     rows = _bookings(table)
     names = set()
-    for column in ("company_name", "company"):
+    # The canonical name first where company normalization has run: matching
+    # against one spelling per entity beats matching against all of them.
+    for column in ("company_normalized", "company_name", "company"):
         if column in rows.columns:
             names |= {value.strip() for value in rows[column].astype(str) if value.strip()}
     # A company identifier that is purely numeric carries no name to match against.

@@ -77,6 +77,9 @@ def render() -> None:
 def _run_analysis(run_id: str) -> None:
     """Everything automatic, in one wait, so the review screen needs no spinners."""
     from classification.spend_classification import run_spend_classification
+    from companies.normalization import confirm_companies
+    from companies.normalization import has_artifact as has_companies
+    from companies.normalization import run_company_normalization
     from fx.currency import run_currency
     from fx.ecb import load_reference_rates
     from profiling.data_profiling import confirm_profiling, has_report, run_profiling
@@ -94,6 +97,17 @@ def _run_analysis(run_id: str) -> None:
 
             st.write("Converting amounts to EUR")
             run_currency(run_id, load_reference_rates())
+
+        if not has_companies(run_id):
+            # Before the supplier stage: intercompany detection matches supplier
+            # names against the group's own entities, which is cleaner with one
+            # spelling per company than with all of them.
+            st.write("Resolving the companies in the submission")
+            run_company_normalization(run_id)
+            # Provisional, like the profiling confirmation above: it writes the
+            # canonical columns so the stages below can use them. The review
+            # screen replaces it with the user's decisions.
+            confirm_companies(run_id)
 
         if not has_artifact(run_id):
             st.write("Matching supplier names and finding intercompany entities")

@@ -111,11 +111,19 @@ def confirm_suppliers(
     approvals: dict[int, bool] | None = None,
     names: dict[int, str] | None = None,
     intercompany: dict[int, bool] | None = None,
+    *,
+    assignments: dict[str, str] | None = None,
 ) -> SupplierNormalizationArtifact:
     """Apply the user's decisions and write the canonical columns.
 
     A group the user does not approve falls apart: every member keeps its own
     identity. Approving is the only way names merge.
+
+    `assignments` maps a raw name to the group it belongs in, which is how the
+    user moves a name between groups, invents a group or splits one -- decisions
+    approving and renaming cannot express. It is applied after the group-level
+    decisions, so intercompany marks made above carry into the rebuilt groups.
+    Without it nothing about the path below changes.
     """
     approvals, names, intercompany = approvals or {}, names or {}, intercompany or {}
     artifact = _load(step_path(run_id, STEP) / ARTIFACT_NAME)
@@ -137,6 +145,9 @@ def confirm_suppliers(
         if approved != group.approved:
             updates["source"] = "user"
         groups.append(group.model_copy(update=updates))
+
+    if assignments is not None:
+        groups = _regroup(_name_counts(run_id), groups, assignments)
 
     confirmed = artifact.model_copy(update={"groups": groups})
     target = step_path(run_id, STEP)
@@ -167,6 +178,78 @@ def has_artifact(run_id: str) -> bool:
 
 def has_confirmed(run_id: str) -> bool:
     return (step_path(run_id, STEP) / CONFIRMED_ARTIFACT_NAME).is_file()
+
+
+def name_volumes(run_id: str) -> pd.DataFrame:
+    """Rows and spend per raw supplier name, so a name can be moved knowingly."""
+    table = load_table(run_id)
+    amount = pd.to_numeric(table.get("amount_eur"), errors="coerce")
+    if amount is None:
+        amount = pd.Series(float("nan"), index=table.index)
+    eligible = table.get("include_spend_analysis")
+    if eligible is not None:
+        amount = amount.where(eligible.fillna(False).astype(bool))
+
+    frame = pd.DataFrame(
+        {"name": table["supplier"].astype(str).str.strip(), "spend": amount}
+    )
+    frame = frame[frame["name"] != ""]
+    return frame.groupby("name").agg(rows=("name", "size"), spend=("spend", "sum"))
+
+
+def _name_counts(run_id: str) -> dict[str, int]:
+    volumes = name_volumes(run_id)
+    return {str(name): int(entry["rows"]) for name, entry in volumes.iterrows()}
+
+
+def _regroup(
+    counts: dict[str, int], groups: list[SupplierGroup], assignments: dict[str, str]
+) -> list[SupplierGroup]:
+    """Rebuild the groups from the name-to-group map the user wrote.
+
+    A group built by hand is approved by definition -- the user is the decision.
+    Two things are inherited rather than invented: the master entry, because
+    country and contract status may only come from there, and the intercompany
+    mark, which follows whichever original group contributes the most rows.
+    """
+    origin = {member: group for group in groups for member in group.members}
+
+    clusters: dict[str, list[str]] = {}
+    for member in origin:
+        label = assignments.get(member, "").strip() or member
+        clusters.setdefault(label, []).append(member)
+
+    def weight(names) -> int:
+        return sum(counts.get(name, 0) for name in names)
+
+    rebuilt = []
+    ordered = sorted(clusters.items(), key=lambda item: -weight(item[1]))
+    for sequence, (label, members) in enumerate(ordered, start=1):
+        sources = [origin[name] for name in members]
+        master = next(
+            (group for group in sources if group.master_id),
+            None,
+        )
+        dominant = max(sources, key=lambda group: weight(group.members))
+        rebuilt.append(
+            SupplierGroup(
+                group_id=sequence,
+                canonical_name=label,
+                canonical_id=(master.master_id if master else f"PLI-{sequence:03d}"),
+                members=sorted(members),
+                row_count=weight(members),
+                source="user",
+                confidence=1.0,
+                comment="Grouped by hand.",
+                master_id=master.master_id if master else None,
+                country=master.country if master else None,
+                contract_on_file=master.contract_on_file if master else None,
+                is_intercompany=dominant.is_intercompany,
+                intercompany_reason=dominant.intercompany_reason,
+                approved=True,
+            )
+        )
+    return rebuilt
 
 
 def _judge(grey, table, master, client, run_id, logger):
