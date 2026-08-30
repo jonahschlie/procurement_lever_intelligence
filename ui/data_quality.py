@@ -157,9 +157,9 @@ def _render_result(run_id: str) -> None:
 
     st.subheader("Result")
     left, middle, right = st.columns(3)
-    left.metric("Spend before", f"{report.spend_before:,.0f}")
+    left.metric("Spend before (raw)", f"{report.spend_before:,.0f}")
     middle.metric(
-        "Spend after exclusions",
+        "Spend after exclusions (raw)",
         f"{report.spend_after:,.0f}",
         delta=f"-{report.spend_before - report.spend_after:,.0f}",
         delta_color="off",
@@ -168,7 +168,9 @@ def _render_result(run_id: str) -> None:
 
     st.caption(
         "The row count is unchanged — exclusions are flags, so the table still "
-        "reconciles against the source export."
+        "reconciles against the source export. These sums are raw and unconverted: "
+        "they add local currencies together and become meaningful in EUR on the "
+        "Currency page."
     )
 
     st.subheader("Eligibility")
@@ -199,6 +201,10 @@ def _render_result(run_id: str) -> None:
         hide_index=True,
     )
 
+    st.divider()
+    if st.button("Convert to EUR", type="primary"):
+        _convert(run_id)
+
     st.subheader("Preview")
     table = load_table(run_id)
     columns = [c for c in table.columns if c.startswith(("include_", "flag_"))]
@@ -207,3 +213,32 @@ def _render_result(run_id: str) -> None:
         width="stretch",
         hide_index=True,
     )
+
+
+def _convert(run_id: str) -> None:
+    from fx.currency import has_report as has_currency
+    from fx.currency import run_currency, submitted_fx_rates
+    from fx.ecb import load_reference_rates
+
+    if not has_currency(run_id):
+        with st.status("Converting to EUR", expanded=True) as status:
+            try:
+                rates, source = load_reference_rates(), "ecb"
+                st.write(f"ECB reference rates: {len(rates):,} days")
+            except FileNotFoundError:
+                st.write("No rate history shipped; falling back to the submitted FX sheet")
+                rates, source = submitted_fx_rates(run_id), "submitted_fx"
+            if rates is None:
+                status.update(label="No rate source available", state="error")
+                st.error(
+                    "Neither the shipped ECB history nor a usable FX sheet from the "
+                    "submission is available, so nothing can be converted."
+                )
+                return
+            st.write("Converting amounts at each posting date's rate")
+            report = run_currency(run_id, rates, source)
+            status.update(
+                label=f"Net spend: {report.spend_net_eur:,.0f} EUR", state="complete"
+            )
+    st.session_state["switch_to"] = "currency"
+    st.rerun()

@@ -268,4 +268,90 @@ def test_data_quality_page_reports_the_outcome_once_applied(run_root, portfolio_
 
     assert not app.exception
     labels = [metric.label for metric in app.metric]
-    assert labels == ["Spend before", "Spend after exclusions", "Rows excluded"]
+    assert labels == ["Spend before (raw)", "Spend after exclusions (raw)", "Rows excluded"]
+
+
+def test_currency_page_is_empty_without_a_conversion(run_root):
+    app = _page("currency")
+
+    assert not app.exception
+    assert app.title[0].value == "Currency"
+    assert "No conversion yet" in app.info[0].value
+
+
+def test_suppliers_page_is_empty_without_matching(run_root):
+    app = _page("suppliers")
+
+    assert not app.exception
+    assert app.title[0].value == "Suppliers"
+    assert "No supplier matching yet" in app.info[0].value
+
+
+def _ruled_run(portfolio_xlsx):
+    """A run mapped fully enough that rows qualify for spend analysis."""
+    from mapping.schema_mapping import load_artifact
+    from profiling.data_profiling import confirm_profiling as _confirm
+    from transform.rule_engine import run_rule_engine as _rules
+
+    run_id = _mapped_run(portfolio_xlsx)
+    dataset_id = load_artifact(run_id).datasets[0].dataset_id
+    confirm_mapping(
+        run_id,
+        {
+            dataset_id: {
+                "amount_local": "Amount in Local Currency",
+                "posting_date": "Posting Date",
+                "company": "Company Code",
+                "invoice_number": "Document Number",
+                "gl_account": "G/L Account",
+            }
+        },
+    )
+    build_canonical_table(run_id)
+    run_profiling(run_id)
+    _confirm(run_id)
+    _rules(run_id)
+    return run_id
+
+
+def test_currency_page_reports_the_conversion(run_root, portfolio_xlsx):
+    from fx.currency import run_currency
+    from fx.ecb import parse_ecb_csv
+
+    run_id = _ruled_run(portfolio_xlsx)
+    rates = parse_ecb_csv(
+        "Date,SEK,\n2025-01-10,11.50,\n2025-02-03,11.40,\n2025-03-03,11.30,\n"
+    )
+    run_currency(run_id, rates)
+
+    app = _page("currency", run_id=run_id)
+
+    assert not app.exception
+    labels = [metric.label for metric in app.metric]
+    assert labels == ["Net spend (EUR)", "Gross spend (EUR)", "Credit volume (EUR)"]
+    breakdown = app.dataframe[0].value
+    assert set(breakdown["Currency"]) == {"EUR", "SEK"}
+
+
+def test_suppliers_page_shows_queue_then_result(run_root, portfolio_xlsx):
+    from suppliers.normalization import confirm_suppliers, run_supplier_normalization
+    from agents.supplier_matching import PairVerdict, SupplierMatchProposal
+
+    run_id = _ruled_run(portfolio_xlsx)
+    run_supplier_normalization(
+        run_id,
+        client=FakeClient(SupplierMatchProposal(verdicts=[])),
+    )
+
+    queue = _page("suppliers", run_id=run_id)
+    assert not queue.exception
+    assert [button.label for button in queue.button] == ["Confirm suppliers"]
+
+    confirm_suppliers(run_id)
+    result = _page("suppliers", run_id=run_id)
+    assert not result.exception
+    assert [metric.label for metric in result.metric] == [
+        "Raw names",
+        "Canonical suppliers",
+        "Merges applied",
+    ]

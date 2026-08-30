@@ -118,3 +118,18 @@ def test_logger_is_not_attached_twice(run_root):
     assert log.count("first") == 1
     assert log.count("second") == 1
     assert log.count("run created") == 1
+
+
+def test_steps_are_recorded_where_the_run_lives_not_where_its_id_says(run_root):
+    """A copied run directory must not write its steps into the original run."""
+    import shutil
+
+    original = create_run()
+    copy = run_root / "copied_run"
+    shutil.copytree(run_path(original.run_id), copy)
+
+    record_step("copied_run", "ingestion", [copy / "run.json"])
+
+    assert [s.step for s in load_run("copied_run").steps] == ["ingestion"]
+    # The run whose id sits inside the copied manifest is untouched.
+    assert load_run(original.run_id).steps == []

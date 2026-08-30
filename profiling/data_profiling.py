@@ -26,6 +26,7 @@ from core.models import (
 )
 from core.run import get_logger, record_step, step_path
 from core.table import load_table
+from suppliers.candidates import normalize_name
 from core.values import (
     parse_amounts_per_dataset,
     parse_dates_per_dataset,
@@ -69,10 +70,7 @@ LOW_VALUE_GL = (
     "verschiedenes",
 )
 
-LEGAL_SUFFIXES = (
-    "ltd", "limited", "inc", "corp", "corporation", "gmbh", "bv", "nv", "sa", "sl",
-    "srl", "ab", "as", "oy", "kft", "sp z o o", "spzoo", "plc", "llc", "kg", "ag",
-)
+
 
 
 def run_profiling(run_id: str) -> ProfilingReport:
@@ -365,7 +363,7 @@ def _semantic(table: pd.DataFrame) -> list[Finding]:
     supplier = table["supplier"].astype(str).str.strip()
     named = supplier[supplier != ""]
     if not named.empty:
-        collapsed = named.map(_normalize_supplier).nunique()
+        collapsed = named.map(normalize_name).nunique()
         distinct = named.nunique()
         findings.append(
             Finding(
@@ -639,12 +637,6 @@ def category_is_supplier(table: pd.DataFrame) -> pd.Series:
 
 def _collapse(value: str) -> str:
     return re.sub(r"\s+", " ", value.casefold()).strip()
-
-
-def _normalize_supplier(name: str) -> str:
-    text = re.sub(r"[^\w\s]", " ", name.casefold())
-    words = [word for word in text.split() if word not in LEGAL_SUFFIXES]
-    return " ".join(words)
 
 
 def _value_formats(local, group, posting) -> dict[str, str]:

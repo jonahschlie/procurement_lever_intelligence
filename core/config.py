@@ -35,3 +35,18 @@ MAX_FINDING_EXAMPLES = 5
 
 def runs_dir() -> Path:
     return Path(os.getenv("PLI_RUNS_DIR", "runs")).expanduser()
+
+
+# ECB daily reference rates, shipped with the repository so conversion needs no
+# network at runtime and a run is reproducible years later. Refreshed from the
+# URL below by fx.ecb.fetch_ecb_history().
+ECB_RATES_FILE = Path(
+    os.getenv("PLI_ECB_RATES", Path(__file__).resolve().parent.parent / "ecb_fx_reference_rates.csv")
+)
+ECB_RATES_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.zip"
+
+# Supplier name similarity thresholds: at or above AUTO the names merge without
+# asking anyone; between FLOOR and AUTO the matching agent judges; below FLOOR
+# the pair is not a candidate at all.
+SUPPLIER_AUTO_MERGE = 0.95
+SUPPLIER_CANDIDATE_FLOOR = 0.70

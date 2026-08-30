@@ -17,8 +17,12 @@ Implemented so far:
    portfolio-wide working table.
 5. **Data quality** — profiling measures completeness, consistency and embedded totals; the rule
    engine turns the findings into flags and decides which rows each analysis may use.
+6. **Currency** — amounts are converted to EUR at the ECB daily rate of their posting date. Spend
+   counts net, with gross and credit volume reported alongside.
+7. **Suppliers** — name variants are matched deterministically, the unclear pairs judged by an
+   agent, and every merge confirmed before it becomes canonical.
 
-Currency harmonization and the spend cube follow.
+The spend cube and the analytical views follow.
 
 ## Setup
 
@@ -66,7 +70,17 @@ runs/run_20260829_233045/
         profiling_confirmed.json       # with the user's decisions
     06_rule_engine/
         rule_report.json               # what each rule flagged, spend before and after
+    07_currency/
+        currency_report.json           # net, gross and credit volume in EUR
+        ecb_rates.csv                  # the rates this run used, frozen
+    08_supplier_normalization/
+        supplier_normalization.json            # candidates, agent verdicts, clusters
+        supplier_normalization_confirmed.json  # what the user approved
 ```
+
+`ecb_fx_reference_rates.csv` in the repository root holds the ECB daily reference rates.
+Conversion reads it rather than the network, so it works offline and a run reproduces against the
+same rates later; `fx.ecb.fetch_ecb_history()` refreshes it.
 
 A file is not a dataset. A submission workbook holds a cover letter, instructions, the spend data
 and small lookup tables; triage turns the sheets worth keeping into datasets, each with a role.

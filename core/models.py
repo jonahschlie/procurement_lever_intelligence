@@ -243,6 +243,65 @@ class RuleReport(BaseModel):
     eligibility: dict[str, int]
 
 
+class CurrencyBreakdown(BaseModel):
+    currency: str
+    rows: int
+    sum_local: float
+    rate_min: float | None
+    rate_max: float | None
+    sum_eur: float
+
+
+class CurrencyReport(BaseModel):
+    """What the conversion did, and the spend semantics that follow from it.
+
+    Spend counts net: credit notes reduce it, because the net figure is what
+    actually flowed and therefore what one negotiates over. Gross and the credit
+    volume are carried alongside.
+    """
+
+    row_count: int
+    rate_source: str
+    rates_frozen_to: str
+    spend_net_eur: float
+    spend_gross_eur: float
+    credit_volume_eur: float
+    converted_rows: int
+    flagged_rows: int
+    group_unconverted_rows: int
+    breakdown: list[CurrencyBreakdown]
+
+
+class SupplierGroup(BaseModel):
+    """One proposed canonical supplier and the raw names it absorbs."""
+
+    group_id: int
+    canonical_name: str
+    canonical_id: str
+    members: list[str]
+    row_count: int
+    source: Literal["deterministic", "ai", "ai_unsure", "user"]
+    confidence: float
+    comment: str
+    master_id: str | None = None
+    country: str | None = None
+    approved: bool
+
+
+class RejectedPair(BaseModel):
+    left: str
+    right: str
+    similarity: float
+    comment: str
+
+
+class SupplierNormalizationArtifact(BaseModel):
+    distinct_names: int
+    groups: list[SupplierGroup]
+    rejected: list[RejectedPair]
+    llm_call: LlmCall | None
+
+
 class StepRecord(BaseModel):
     step: str
     completed_at: datetime

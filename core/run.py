@@ -29,6 +29,8 @@ PIPELINE_STEPS = (
     "canonical_table",
     "profiling",
     "rule_engine",
+    "currency",
+    "supplier_normalization",
 )
 
 RUN_MANIFEST_NAME = "run.json"
@@ -40,7 +42,7 @@ def create_run() -> RunManifest:
     created_at = datetime.now(timezone.utc)
     manifest = RunManifest(run_id=_available_run_id(created_at), created_at=created_at)
     (run_path(manifest.run_id) / LOG_DIR_NAME).mkdir(parents=True)
-    _write_manifest(manifest)
+    _write_manifest(manifest.run_id, manifest)
     get_logger(manifest.run_id).info("run created")
     return manifest
 
@@ -79,7 +81,7 @@ def record_step(run_id: str, step: str, artifacts: list[Path]) -> RunManifest:
     )
     # A re-run of a step replaces its record rather than appending a second one.
     manifest.steps = [entry for entry in manifest.steps if entry.step != step] + [record]
-    _write_manifest(manifest)
+    _write_manifest(run_id, manifest)
     return manifest
 
 
@@ -123,6 +125,12 @@ def _available_run_id(created_at: datetime) -> str:
     return candidate
 
 
-def _write_manifest(manifest: RunManifest) -> None:
-    path = run_path(manifest.run_id) / RUN_MANIFEST_NAME
+def _write_manifest(run_id: str, manifest: RunManifest) -> None:
+    """Write back to the directory the manifest was read from.
+
+    Deliberately not run_path(manifest.run_id): a run directory that was copied
+    or renamed still carries its original id inside, and trusting that would
+    record this run's steps into a different run's manifest.
+    """
+    path = run_path(run_id) / RUN_MANIFEST_NAME
     path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")

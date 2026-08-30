@@ -151,9 +151,10 @@ Dashboard
 | Workbook Triage | 6 | built |
 | Schema Mapping | 7 | built |
 | Canonical Working Table | 9 | built |
-| Data Profiling | 10 | open |
-| Rule Engine | 11 | open |
-| Currency Harmonization | 13 | open |
+| Data Profiling | 10 | built |
+| Rule Engine | 11 | built |
+| Currency Harmonization | 13 | built |
+| Supplier Normalization | 11 | built |
 | Canonical Spend Cube | 14 | open |
 | Analytical Views and AI Reasoning | 15–19 | open |
 
@@ -658,17 +659,38 @@ Original values remain stored.
 
 ## Supplier Duplicate Detection
 
-Similarity >95%
+Frequently there is no supplier identifier at all — on a real submission the
+column was entirely absent — so matching works on names alone. Three stages,
+each doing only what it is suited to:
 
-→ merge automatically
+**Deterministic.** Names are reduced to a form blind to case, punctuation, legal
+form and connectives. Identical normal forms merge outright. A similarity score
+over the remaining pairs decides which are worth attention.
 
-Similarity 85–95%
+| Similarity | Treatment |
+| --- | --- |
+| ≥ 0.95 | merged without asking |
+| 0.70 – 0.95 | judged by the matching agent |
+| < 0.70 | not a candidate |
 
-→ review queue
+**AI for the grey zone.** Whether `Atlas Frght & Log.` and
+`Atlas Freight & Logistics` are one company is a semantic question; finding the
+pair is not. The agent sees the two names plus country and purchase context, never
+amounts. Its instruction weights the errors asymmetrically: a wrong merge silently
+misstates every supplier figure, a missed one costs a reviewer a glance, so
+uncertainty answers "different".
 
-Similarity <85%
+This is where the judgement pays for itself. On the real submission the agent
+merged abbreviations correctly and **kept apart** `Helios Renewables España SL`
+and `Helios Renewables Iberia, S.A.` — two national subsidiaries a similarity
+score alone would have collapsed into one supplier.
 
-→ no merge
+**Review.** Every group is shown with its members, the evidence and who decided;
+deterministic and confident AI merges arrive preticked, uncertain ones do not.
+Rejected pairs stay visible. Nothing becomes canonical without confirmation.
+
+The result lands in new columns — canonical name, canonical id, country from the
+supplier master where one matched. The original name is never overwritten.
 
 ---
 
@@ -742,15 +764,54 @@ In practice this means the working table's row count never changes after section
 
 # 13. Currency Harmonization
 
-Preferred order
+Spend across a portfolio is only comparable in one currency. Conversion is always
+deterministic.
 
-1. Existing Group Currency
-2. FX Conversion
-3. Flag if impossible
+## Rate source
 
-Currency conversion is always deterministic.
+**ECB daily reference rates at the posting date of each transaction.** The rate
+history ships with the repository rather than being fetched at run time, so
+conversion needs no network, works on a locked-down deployment, and a run made
+today reproduces against the same rates in a year. The rates a run actually used
+are additionally frozen into the run directory.
 
-An FX table shipped with the submission is identified during triage (section 6) and is the preferred rate source, because it is the rate the company itself used.
+Rates exist only for trading days; weekends and holidays take the last published
+rate, which is the ECB's own convention. The ECB quotes units of currency per one
+euro, so conversion is `amount_eur = amount_local / rate`.
+
+Order of preference:
+
+1. ECB daily reference rate for the posting date
+2. FX table shipped with the submission, if no rate history is available
+3. Flag the row — never guess
+
+## Why provided amounts are a cross-check, not a source
+
+Earlier versions of this concept preferred a group-currency column already
+present in the export. Measurement overturned that: on a real submission the
+group amount equalled the local amount on **8,168 of 8,182 non-EUR rows** — the
+column was never converted. The submission's own FX sheet covered one of three
+foreign currencies and was labelled "may be stale".
+
+Provided figures are therefore reconciled against the computed ones and reported
+where they disagree, but they do not drive the conversion.
+
+The effect is not cosmetic. Summing the raw amount column across currencies gave
+227,419,026; converted at daily rates the same rows are **140,639,488 EUR**. The
+unconverted figure overstated spend by 62%, and 13.5 million HUF that read as
+13.5 million in a mixed sum are 34,151 EUR.
+
+## Credit Notes
+
+**Spend counts net.** Credit notes, reversals and refunds carry their sign into
+every total, because the net figure is what actually flowed and therefore what a
+negotiation is about. Gross spend and credit volume are reported alongside, so
+the correction is visible rather than hidden.
+
+Matching a credit note to the invoice it corrects is not attempted. It was
+tested and found impossible on real data: not one document number appeared twice
+with opposing signs. Where a future export does support it, matching becomes a
+profiling check, not a change to this rule.
 
 ---
 
