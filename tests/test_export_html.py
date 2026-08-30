@@ -166,3 +166,30 @@ def test_a_supplier_name_cannot_close_the_script_element(lever_run):
     # And the escaped form is still valid JSON the browser will parse.
     specs = json.loads("{" + re.search(r"const SPECS = \{(.*)\n\};", html, re.S).group(1) + "}")
     assert any(hostile in json.dumps(spec) for spec in specs.values())
+
+
+def test_a_report_without_the_runtime_says_the_charts_are_missing(lever_run, monkeypatch):
+    """vl-convert draws the figures here, interactive or not.
+
+    Without it the file has no charts at all, so the note has to say that rather
+    than promise static images a reader will look for and not find. Measured
+    against a deployment whose requirements.txt had not listed it.
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def without_vl_convert(name, *args, **kwargs):
+        if name == "vl_convert":
+            raise ImportError("No module named 'vl_convert'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_vl_convert)
+    html = build_html(build_report(lever_run))
+    monkeypatch.undo()
+
+    assert "The charts are missing from this file." in html
+    assert "vl-convert-python" in html
+    assert "static images" not in html
+    # The numbers survive: only the drawings are gone.
+    assert "<summary>Show data</summary>" in html

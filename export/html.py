@@ -87,13 +87,17 @@ def build_html(document: ReportDocument) -> str:
 
 
 def _runtime() -> tuple[str, bool]:
-    """The Vega bundle, once. Returns the script and whether charts are static."""
+    """The Vega bundle, once. Returns the script and whether it is missing."""
     try:
         import vl_convert as vlc
 
         return vlc.javascript_bundle(vl_version=_vl_version()), False
     except Exception:
-        # Said out loud in the report rather than quietly delivering something else.
+        # vl-convert is what draws a chart at all here, interactive or static, so
+        # without it there are no figures -- only the tables under them. Measured
+        # against a deployment that had not installed it: 52 KB and no chart, where
+        # a complete report is about a megabyte. Saying so beats a reader assuming
+        # the analysis found nothing to draw.
         return "", True
 
 
@@ -321,9 +325,11 @@ TEMPLATE = """<!doctype html>
 
   <div class="note">{{ cover.note }}</div>
   {% if degraded %}
-  <div class="note">The interactive chart runtime could not be embedded, so the
-  figures in this file are static images. The numbers are unaffected and every
-  chart still carries its table.</div>
+  <div class="note"><strong>The charts are missing from this file.</strong> The
+  environment that produced it has no vega/vega-lite runtime to embed
+  (<code>vl-convert-python</code>), and this report deliberately fetches nothing
+  from the internet. Every figure's numbers are below it under &ldquo;Show
+  data&rdquo;, and none of them are affected — only the drawings are absent.</div>
   {% endif %}
 </main>
 

@@ -206,6 +206,19 @@ the agent is only consulted about tables whose *meaning* is in question.
 Only column names, inferred types and at most five truncated sample values per column are sent to
 the model. What was sent is recorded in the run artifact.
 
+## Dependencies
+
+`requirements.txt` is generated, not edited:
+
+```bash
+uv export --no-hashes --no-dev --no-emit-project -o requirements.txt
+```
+
+Streamlit Community Cloud installs from it whenever the file is present, so a
+dependency added to `pyproject.toml` without regenerating it is installed locally
+and missing in production. `vl-convert-python` is the one that shows: without it
+the HTML export has no charts at all, and says so in the file.
+
 ## Deployment
 
 Deployed on Streamlit Community Cloud from `app.py`, with dependencies from `requirements.txt`
