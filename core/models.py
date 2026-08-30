@@ -181,6 +181,68 @@ class CanonicalTableReport(BaseModel):
     contributions: list[DatasetContribution]
 
 
+Severity = Literal["high", "medium", "low", "info"]
+CheckCategory = Literal[
+    "completeness", "consistency", "semantic", "aggregates", "reconciliation", "readiness"
+]
+
+
+class Finding(BaseModel):
+    check: str
+    category: CheckCategory
+    severity: Severity
+    result: str
+    affected_rows: int
+    detail: str
+    examples: list[str] = []
+
+
+class AggregateCandidate(BaseModel):
+    """A row that looks like an embedded subtotal rather than a booking."""
+
+    position: int
+    source_row: str
+    company: str
+    label: str
+    amount: str
+    reasons: list[str]
+    exclude: bool = True
+
+
+class CompanyReconciliation(BaseModel):
+    company: str
+    detail_total: float
+    stated_total: float
+    difference: float
+    detail_rows: int
+
+
+class ProfilingReport(BaseModel):
+    row_count: int
+    findings: list[Finding]
+    aggregate_candidates: list[AggregateCandidate]
+    reconciliation: list[CompanyReconciliation]
+    category_analysis_enabled: bool
+    category_decision: str
+    value_formats: dict[str, str]
+
+
+class RuleEffect(BaseModel):
+    rule: str
+    column: str
+    affected_rows: int
+    detail: str
+
+
+class RuleReport(BaseModel):
+    row_count: int
+    effects: list[RuleEffect]
+    spend_before: float
+    spend_after: float
+    excluded_rows: int
+    eligibility: dict[str, int]
+
+
 class StepRecord(BaseModel):
     step: str
     completed_at: datetime

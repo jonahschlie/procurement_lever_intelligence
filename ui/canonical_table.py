@@ -7,6 +7,7 @@ from core.canonical import field_by_key
 from core.config import PREVIEW_ROWS
 from core.run import run_path
 from core.table import has_table, load_table, load_table_meta
+from profiling.data_profiling import has_report, run_profiling
 from transform.canonical_table import load_report
 
 
@@ -68,3 +69,11 @@ def render() -> None:
     st.subheader("Preview")
     st.dataframe(load_table(run_id).head(PREVIEW_ROWS), width="stretch", hide_index=True)
     st.caption(f"Stored at {run_path(run_id) / 'canonical_table.parquet'}")
+
+    st.divider()
+    if st.button("Run data quality checks", type="primary"):
+        with st.spinner("Profiling the table"):
+            if not has_report(run_id):
+                run_profiling(run_id)
+        st.session_state["switch_to"] = "data_quality"
+        st.rerun()

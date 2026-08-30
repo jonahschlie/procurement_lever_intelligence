@@ -15,8 +15,10 @@ Implemented so far:
    with a confidence score and a comment; the user reviews and corrects both steps in the UI.
 4. **Canonical table** — the confirmed mapping is applied and every dataset is stacked into one
    portfolio-wide working table.
+5. **Data quality** — profiling measures completeness, consistency and embedded totals; the rule
+   engine turns the findings into flags and decides which rows each analysis may use.
 
-Data profiling, the rule engine and the spend cube follow.
+Currency harmonization and the spend cube follow.
 
 ## Setup
 
@@ -59,6 +61,11 @@ runs/run_20260829_233045/
         schema_mapping_confirmed.json  # what the user confirmed
     04_canonical_table/
         canonicalization.json          # what each dataset contributed
+    05_profiling/
+        profiling_report.json          # findings, aggregate candidates, reconciliation
+        profiling_confirmed.json       # with the user's decisions
+    06_rule_engine/
+        rule_report.json               # what each rule flagged, spend before and after
 ```
 
 A file is not a dataset. A submission workbook holds a cover letter, instructions, the spend data
@@ -95,6 +102,15 @@ original export.
 Source columns the mapping did not claim are kept under an `extra_` prefix rather than dropped. They
 are often the ones that explain a discrepancy later, and going back to the source file to fetch them
 would defeat the point of having a working table.
+
+The rule engine adds typed values (`amount_local_value`, `posting_date_value`), quality flags
+(`flag_*`) and eligibility columns (`include_*`) — never rows, and never removing any. On a real
+submission that turned a naive spend of 666,754,199 into 227,419,026 by excluding nine embedded
+subtotal rows, without deleting a single line.
+
+Amount and date formats are decided per column, not per value. `83,122.08` alongside `12485.57`
+means the comma groups thousands; `1.250,00` means it does not. Reading either value on its own
+would be wrong by three orders of magnitude.
 
 ## Agents
 

@@ -56,7 +56,10 @@ def render() -> None:
         "for. You confirm before anything is analysed.\n"
         "3. **Schema mapping** — the transaction columns are translated into the canonical "
         "procurement schema, with a confidence score and a comment per field, which you "
-        "can correct."
+        "can correct.\n"
+        "4. **Data quality** — the table is measured for completeness, consistency and "
+        "embedded totals. Findings become flags; no row is ever deleted, so the figures "
+        "stay reconcilable against the source."
     )
 
     if not staged:

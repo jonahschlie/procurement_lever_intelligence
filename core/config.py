@@ -23,6 +23,14 @@ CONFIDENCE_THRESHOLD = 0.7
 MAX_SAMPLE_VALUES = 5
 MAX_SAMPLE_LENGTH = 60
 
+# A required field missing beyond this share is a high-severity finding.
+MISSING_HIGH_RATIO = 0.05
+# Above this share of rows, a category column that merely repeats the GL text is
+# treated as accounting classification and category analysis is switched off.
+CATEGORY_EQUALS_GL_RATIO = 0.8
+# Findings quote a handful of source rows so a reviewer can look them up.
+MAX_FINDING_EXAMPLES = 5
+
 
 def runs_dir() -> Path:
     return Path(os.getenv("PLI_RUNS_DIR", "runs")).expanduser()

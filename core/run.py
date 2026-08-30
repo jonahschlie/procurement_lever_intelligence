@@ -27,6 +27,8 @@ PIPELINE_STEPS = (
     "workbook_triage",
     "schema_mapping",
     "canonical_table",
+    "profiling",
+    "rule_engine",
 )
 
 RUN_MANIFEST_NAME = "run.json"

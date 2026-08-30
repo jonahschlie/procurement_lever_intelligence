@@ -2,6 +2,8 @@ import logging
 from pathlib import Path
 from types import SimpleNamespace
 
+import pandas as pd
+
 import pytest
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -79,3 +81,66 @@ class FakeResponses:
 class FakeClient:
     def __init__(self, parsed, **kwargs):
         self.responses = FakeResponses(parsed, **kwargs)
+
+
+# A canonical table with one of every defect the profiling checks look for.
+# Source rows are numbered as they would be in a real export, header included.
+_DEFECTIVE_ROWS = [
+    # supplier, amount_local, amount_group, currency, posting, document, invoice, po, gl_account, gl_desc, category, company
+    ("Atlas Freight", "1000.00", "1000.00", "EUR", "2024-01-15", "2024-01-15", "INV1", "PO1", "6000", "Freight costs", "Logistics", "A"),
+    ("Sopra Steria", "2000.00", "2000.00", "EUR", "2024-02-10", "2024-02-10", "INV2", "PO2", "6200", "Consulting", "CONSULTING", "A"),
+    ("", "500.00", "500.00", "EUR", "2024-03-01", "2024-03-01", "INV3", "", "6000", "Freight costs", "Logistics", "A"),
+    ("Atlas Freight", "-300.00", "-300.00", "EUR", "2024-03-05", "2024-03-05", "INV4", "", "6000", "Freight costs", "Logistics", "A"),
+    # exact duplicate of the first row
+    ("Atlas Freight", "1000.00", "1000.00", "EUR", "2024-01-15", "2024-01-15", "INV1", "PO1", "6000", "Freight costs", "Logistics", "A"),
+    # same document number, different amount
+    ("Sopra Steria", "750.00", "750.00", "EUR", "2024-02-11", "2024-02-11", "INV2", "", "6200", "Consulting", "IT Services", "A"),
+    # no currency, but a group amount to fall back on
+    ("Nordwind Papier", "400.00", "400.00", "", "2024-04-01", "2024-04-01", "INV5", "", "6300", "Office supplies", "Facility", "B"),
+    ("Nordwind Papier", "600.00", "600.00", "EUR", "2099-01-01", "2099-01-01", "INV6", "", "6300", "Office supplies", "Facility", "B"),
+    ("Delta Env", "800.00", "800.00", "EUR", "2024-01-01", "2024-02-01", "INV7", "", "6400", "Miscellaneous", "", "B"),
+    # no amount at all
+    ("Delta Env", "", "", "EUR", "2024-05-01", "2024-05-01", "INV8", "", "6400", "Other expenses", "", "B"),
+    # aggregate with a marker, and no identifiers
+    ("*** SUBTOTAL ***", "3950.00", "3950.00", "EUR", "", "", "", "", "", "", "", "A"),
+    # aggregate recognisable only by having an amount and no identifiers
+    ("", "1800.00", "1800.00", "EUR", "", "", "", "", "", "", "", "B"),
+]
+
+_COLUMN_ORDER = (
+    "supplier", "amount_local", "amount_group", "currency", "posting_date",
+    "document_date", "invoice_number", "purchase_order", "gl_account",
+    "gl_description", "category", "company",
+)
+
+
+def defective_table() -> pd.DataFrame:
+    """A canonical table carrying one of every defect, for the quality checks."""
+    from transform.canonical_table import BASE_COLUMNS
+
+    records = []
+    for index, row in enumerate(_DEFECTIVE_ROWS):
+        record = dict(zip(_COLUMN_ORDER, row))
+        record.update(
+            dataset_id="01_export",
+            source_file="export.csv",
+            source_sheet="",
+            source_row=str(index + 2),
+            company_name=f"Company {record['company']}",
+            supplier_id="",
+            cost_center="",
+            profit_center="",
+        )
+        records.append(record)
+    return pd.DataFrame(records, dtype=str)[list(BASE_COLUMNS)]
+
+
+@pytest.fixture
+def defective_run(run_root):
+    """A run whose canonical table is the defective one above."""
+    from core.run import create_run
+    from core.table import write_table
+
+    run_id = create_run().run_id
+    write_table(run_id, defective_table(), "canonical_table")
+    return run_id

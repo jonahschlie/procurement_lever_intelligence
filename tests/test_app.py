@@ -16,7 +16,9 @@ from core.run import create_run
 from ingestion.storage import StagedUpload, store_files
 from mapping.schema_mapping import confirm_mapping, run_schema_mapping
 from tests.conftest import FakeClient
+from profiling.data_profiling import confirm_profiling, run_profiling
 from transform.canonical_table import build_canonical_table
+from transform.rule_engine import run_rule_engine
 from triage.workbook_triage import confirm_triage, run_workbook_triage
 
 APP_PATH = str(Path(__file__).parent.parent / "app.py")
@@ -225,3 +227,45 @@ def test_start_page_asks_for_nothing_but_the_files(run_root):
     assert not app.exception
     # No per-file company input: the group is the same for every export.
     assert not app.sidebar.text_input
+
+
+def _canonical_run(portfolio_xlsx):
+    run_id = _mapped_run(portfolio_xlsx)
+    confirm_mapping(run_id, {})
+    build_canonical_table(run_id)
+    return run_id
+
+
+def test_data_quality_page_is_empty_without_a_report(run_root):
+    app = _page("data_quality")
+
+    assert not app.exception
+    assert app.title[0].value == "Data Quality"
+    assert "No quality report yet" in app.info[0].value
+
+
+def test_data_quality_page_shows_findings_and_asks_before_excluding(run_root, portfolio_xlsx):
+    run_id = _canonical_run(portfolio_xlsx)
+    run_profiling(run_id)
+
+    app = _page("data_quality", run_id=run_id)
+
+    assert not app.exception
+    findings = app.dataframe[0].value
+    assert "Check" in findings.columns
+    assert len(findings) > 0
+    # Nothing is applied until the user says so.
+    assert [button.label for button in app.button] == ["Apply rules"]
+
+
+def test_data_quality_page_reports_the_outcome_once_applied(run_root, portfolio_xlsx):
+    run_id = _canonical_run(portfolio_xlsx)
+    run_profiling(run_id)
+    confirm_profiling(run_id)
+    run_rule_engine(run_id)
+
+    app = _page("data_quality", run_id=run_id)
+
+    assert not app.exception
+    labels = [metric.label for metric in app.metric]
+    assert labels == ["Spend before", "Spend after exclusions", "Rows excluded"]
