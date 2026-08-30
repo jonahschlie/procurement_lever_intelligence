@@ -99,6 +99,36 @@ def parse_date_column(series: pd.Series) -> tuple[pd.Series, DateFormat]:
     )
 
 
+def parse_amounts_per_dataset(
+    series: pd.Series, datasets: pd.Series
+) -> tuple[pd.Series, dict[str, AmountFormat]]:
+    """Parse a stacked column one source dataset at a time.
+
+    The working table stacks several exports into one column, and each export
+    has its own convention. Detecting one format across the stack lets a German
+    "1.250,00" dataset outvote a US "83,122.08" one and silently corrupt it by
+    three orders of magnitude -- the format is only constant per source.
+    """
+    values = pd.Series(pd.NA, index=series.index, dtype="Float64")
+    formats: dict[str, AmountFormat] = {}
+    for dataset, index in series.groupby(datasets).groups.items():
+        parsed, formats[str(dataset)] = parse_amount_column(series.loc[index])
+        values.loc[index] = parsed
+    return values.astype(float), formats
+
+
+def parse_dates_per_dataset(
+    series: pd.Series, datasets: pd.Series
+) -> tuple[pd.Series, dict[str, DateFormat]]:
+    """Parse a stacked date column one source dataset at a time (see above)."""
+    values = pd.Series(pd.NaT, index=series.index, dtype="datetime64[ns]")
+    formats: dict[str, DateFormat] = {}
+    for dataset, index in series.groupby(datasets).groups.items():
+        parsed, formats[str(dataset)] = parse_date_column(series.loc[index])
+        values.loc[index] = parsed
+    return values, formats
+
+
 def spend_basis(local: pd.Series, group: pd.Series) -> pd.Series:
     """The amount to reckon spend with.
 
@@ -144,7 +174,11 @@ def _to_number(value: str, decimal: str | None, thousands: str | None) -> str:
     if not value:
         return ""
 
+    # Accounting notation: (1,234.56) is a negative amount.
+    wrapped = value.startswith("(") and value.endswith(")")
     cleaned = _NOT_NUMERIC.sub("", value)
+    if wrapped and cleaned and not cleaned.startswith("-"):
+        cleaned = f"-{cleaned}"
     # SAP and other ledgers write the sign after the number.
     trailing = _TRAILING_SIGN.match(cleaned)
     if trailing:

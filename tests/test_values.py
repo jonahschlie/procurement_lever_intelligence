@@ -42,6 +42,43 @@ def test_plain_integers_need_no_separator():
     assert fmt.decimal_separator is None
 
 
+def test_parentheses_mean_negative():
+    # Accounting notation: (1,234.56) is a negative amount, not a positive one
+    # with decoration. Losing the sign would silently inflate spend.
+    parsed, _ = _amounts(["(1,234.56)", "500.00"])
+
+    assert parsed == [-1234.56, 500.0]
+
+
+def test_stacked_datasets_keep_their_own_formats():
+    # One column, two sources: German format next to US format. Detected across
+    # the stack, one would outvote the other and corrupt it by three orders of
+    # magnitude -- per dataset, both parse correctly.
+    from core.values import parse_amounts_per_dataset
+
+    series = pd.Series(["1.250,00", "218,90", "83,122.08", "12485.57"], dtype=str)
+    datasets = pd.Series(["sap", "sap", "oracle", "oracle"])
+
+    parsed, formats = parse_amounts_per_dataset(series, datasets)
+
+    assert list(parsed) == [1250.0, 218.9, 83122.08, 12485.57]
+    assert formats["sap"].decimal_separator == ","
+    assert formats["oracle"].decimal_separator == "."
+
+
+def test_stacked_datasets_keep_their_own_date_formats():
+    from core.values import parse_dates_per_dataset
+
+    series = pd.Series(["2024-01-15", "15.01.2024"], dtype=str)
+    datasets = pd.Series(["a", "b"])
+
+    parsed, formats = parse_dates_per_dataset(series, datasets)
+
+    assert [str(value.date()) for value in parsed] == ["2024-01-15", "2024-01-15"]
+    assert formats["a"].pattern == "%Y-%m-%d"
+    assert formats["b"].pattern == "%d.%m.%Y"
+
+
 def test_trailing_sign_is_understood():
     parsed, _ = _amounts(["1234.56-", "99.00"])
 

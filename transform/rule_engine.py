@@ -17,7 +17,7 @@ import pandas as pd
 from core.models import RuleEffect, RuleReport
 from core.run import get_logger, record_step, step_path
 from core.table import load_table, write_table
-from core.values import parse_amount_column, parse_date_column, spend_basis
+from core.values import parse_amounts_per_dataset, parse_dates_per_dataset, spend_basis
 from profiling.data_profiling import category_is_supplier, load_confirmed
 
 STEP = "rule_engine"
@@ -42,10 +42,11 @@ def run_rule_engine(run_id: str) -> RuleReport:
     table = load_table(run_id)
     profile = load_confirmed(run_id)
 
-    local, _ = parse_amount_column(table["amount_local"])
-    group, _ = parse_amount_column(table["amount_group"])
-    posting, _ = parse_date_column(table["posting_date"])
-    document, _ = parse_date_column(table["document_date"])
+    datasets = table["dataset_id"]
+    local, _ = parse_amounts_per_dataset(table["amount_local"], datasets)
+    group, _ = parse_amounts_per_dataset(table["amount_group"], datasets)
+    posting, _ = parse_dates_per_dataset(table["posting_date"], datasets)
+    document, _ = parse_dates_per_dataset(table["document_date"], datasets)
     amount = spend_basis(local, group)
 
     table["amount_local_value"] = local

@@ -26,7 +26,11 @@ from core.models import (
 )
 from core.run import get_logger, record_step, step_path
 from core.table import load_table
-from core.values import parse_amount_column, parse_date_column, spend_basis
+from core.values import (
+    parse_amounts_per_dataset,
+    parse_dates_per_dataset,
+    spend_basis,
+)
 
 STEP = "profiling"
 ARTIFACT_NAME = "profiling_report.json"
@@ -36,14 +40,20 @@ CONFIRMED_ARTIFACT_NAME = "profiling_confirmed.json"
 # and therefore the weakest signal here, which is why candidates are confirmed by
 # a person rather than excluded automatically.
 TOTAL_MARKERS = (
-    "TOTAL",
+    "GRAND TOTAL",
     "SUBTOTAL",
     "SUB-TOTAL",
-    "GRAND TOTAL",
+    "TOTAL",
     "SUM",
     "SUMME",
     "GESAMT",
+    "GESAMTSUMME",
     "ZWISCHENSUMME",
+)
+# Word boundaries, so the marker "TOTAL" does not fire on a supplier that merely
+# contains it -- TotalEnergies SE is a booking, not a subtotal.
+_MARKER_PATTERN = re.compile(
+    r"\b(?:" + "|".join(re.escape(marker) for marker in TOTAL_MARKERS) + r")\b"
 )
 MARKER_FIELDS = ("supplier", "company_name", "gl_description", "category", "invoice_number")
 
@@ -69,10 +79,11 @@ def run_profiling(run_id: str) -> ProfilingReport:
     logger = get_logger(run_id)
     table = load_table(run_id)
 
-    local, local_format = parse_amount_column(table["amount_local"])
-    group, group_format = parse_amount_column(table["amount_group"])
-    posting, posting_format = parse_date_column(table["posting_date"])
-    document, _ = parse_date_column(table["document_date"])
+    datasets = table["dataset_id"]
+    local, local_formats = parse_amounts_per_dataset(table["amount_local"], datasets)
+    group, group_formats = parse_amounts_per_dataset(table["amount_group"], datasets)
+    posting, posting_formats = parse_dates_per_dataset(table["posting_date"], datasets)
+    document, _ = parse_dates_per_dataset(table["document_date"], datasets)
     amount = spend_basis(local, group)
 
     candidates = _aggregate_candidates(table, amount)
@@ -100,11 +111,7 @@ def run_profiling(run_id: str) -> ProfilingReport:
         reconciliation=reconciliation,
         category_analysis_enabled=category_enabled,
         category_decision=category_decision,
-        value_formats={
-            "amount_local": _describe_amount(local_format),
-            "amount_group": _describe_amount(group_format),
-            "posting_date": posting_format.pattern or "not recognised",
-        },
+        value_formats=_value_formats(local_formats, group_formats, posting_formats),
     )
 
     target = step_path(run_id, STEP)
@@ -389,7 +396,7 @@ def _aggregate_candidates(table: pd.DataFrame, amount: pd.Series) -> list[Aggreg
     marker_hits: dict[int, str] = {}
     for column in MARKER_FIELDS:
         values = table[column].astype(str).str.upper()
-        hit = values.apply(lambda text: any(marker in text for marker in TOTAL_MARKERS))
+        hit = values.apply(lambda text: bool(_MARKER_PATTERN.search(text)))
         for position in table.index[hit & ~markers]:
             marker_hits[position] = column
         markers |= hit
@@ -416,6 +423,9 @@ def _aggregate_candidates(table: pd.DataFrame, amount: pd.Series) -> list[Aggreg
                 label=_candidate_label(row),
                 amount=str(row["amount_local"]) or str(row["amount_group"]),
                 reasons=reasons,
+                # Preticked only when the shape agrees. A marker alone on a fully
+                # identified booking must not be one hasty click from exclusion.
+                exclude=bool(structurally_empty[position]),
             )
         )
     return candidates
@@ -424,7 +434,7 @@ def _aggregate_candidates(table: pd.DataFrame, amount: pd.Series) -> list[Aggreg
 def _candidate_label(row: pd.Series) -> str:
     for column in MARKER_FIELDS:
         value = str(row[column]).strip()
-        if value and any(marker in value.upper() for marker in TOTAL_MARKERS):
+        if value and _MARKER_PATTERN.search(value.upper()):
             return value
     return str(row["supplier"]).strip() or "(no label)"
 
@@ -635,6 +645,22 @@ def _normalize_supplier(name: str) -> str:
     text = re.sub(r"[^\w\s]", " ", name.casefold())
     words = [word for word in text.split() if word not in LEGAL_SUFFIXES]
     return " ".join(words)
+
+
+def _value_formats(local, group, posting) -> dict[str, str]:
+    """One entry per column, or per column and dataset when the runs mix sources."""
+    single = len(local) == 1
+
+    def spread(column, formats, describe):
+        if single:
+            return {column: describe(next(iter(formats.values())))}
+        return {f"{column} [{dataset}]": describe(fmt) for dataset, fmt in sorted(formats.items())}
+
+    return {
+        **spread("amount_local", local, _describe_amount),
+        **spread("amount_group", group, _describe_amount),
+        **spread("posting_date", posting, lambda fmt: fmt.pattern or "not recognised"),
+    }
 
 
 def _describe_amount(amount_format) -> str:

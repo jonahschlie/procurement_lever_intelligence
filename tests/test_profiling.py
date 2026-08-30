@@ -67,6 +67,35 @@ def test_both_kinds_of_aggregate_row_are_found(defective_run):
     assert all(candidate.exclude for candidate in report.aggregate_candidates)
 
 
+def test_a_supplier_merely_containing_total_is_not_a_candidate(run_root, defective_run):
+    from core.table import load_table, write_table
+
+    table = load_table(defective_run)
+    # A fully identified booking from a supplier whose name contains TOTAL.
+    table.loc[0, "supplier"] = "TotalEnergies SE"
+    write_table(defective_run, table, "canonical_table")
+
+    report = run_profiling(defective_run)
+
+    assert "2" not in {candidate.source_row for candidate in report.aggregate_candidates}
+
+
+def test_a_marker_on_a_full_booking_is_shown_but_not_preticked(run_root, defective_run):
+    from core.table import load_table, write_table
+
+    table = load_table(defective_run)
+    # Standalone word TOTAL, but the row keeps date, document number and account.
+    table.loc[0, "supplier"] = "TOTAL"
+    write_table(defective_run, table, "canonical_table")
+
+    report = run_profiling(defective_run)
+
+    candidate = next(c for c in report.aggregate_candidates if c.source_row == "2")
+    assert candidate.exclude is False
+    # The structurally empty ones stay preticked.
+    assert all(c.exclude for c in report.aggregate_candidates if c.source_row in ("12", "13"))
+
+
 def test_the_overstatement_is_quantified(defective_run):
     finding = _by_check(run_profiling(defective_run))["Embedded aggregate rows"]
 
