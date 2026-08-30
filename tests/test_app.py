@@ -83,7 +83,7 @@ def test_start_page_keeps_the_controls_in_the_sidebar(run_root):
     assert len(app.sidebar.file_uploader) == 1
     assert [button.label for button in app.sidebar.button] == ["Start analysis"]
     # No preview: the workbook review is the first look at the data.
-    assert not app.dataframe
+    assert not app.main.dataframe
     assert "Upload an ERP export in the sidebar" in app.info[0].value
 
 
@@ -111,7 +111,7 @@ def test_review_page_lists_every_sheet_with_its_role(run_root, portfolio_xlsx):
     assert not app.exception
     assert app.subheader[0].value == "portfolio.xlsx"
 
-    table = app.dataframe[0].value
+    table = app.main.dataframe[0].value
     assert list(table["Sheet"]) == [
         "1. Brief",
         "2. How to Submit",
@@ -165,7 +165,7 @@ def test_mapping_page_shows_the_table_and_the_raw_rows(run_root, portfolio_xlsx)
 
     # AppTest surfaces st.data_editor as a dataframe element: [0] is the mapping
     # table, [1] the raw preview underneath it.
-    mapping, raw = (element.value for element in app.dataframe)
+    mapping, raw = (element.value for element in app.main.dataframe)
 
     # Looked up by field rather than by row number, so adding a canonical field
     # later does not silently shift what this asserts.
@@ -213,7 +213,7 @@ def test_canonical_table_page_reports_what_was_built(run_root, portfolio_xlsx):
     assert not app.exception
     assert [metric.value for metric in app.metric] == ["5", "37", "1"]
 
-    contributions, preview = (element.value for element in app.dataframe)
+    contributions, preview = (element.value for element in app.main.dataframe)
     assert contributions.loc[0, "Source"] == "portfolio.xlsx"
     assert contributions.loc[0, "Rows"] == 5
     assert preview.loc[0, "supplier"] == "Atlas Freight AB"
@@ -370,7 +370,7 @@ def test_report_shows_the_chain_from_booked_to_negotiable(run_root, portfolio_xl
         "Third party (EUR)",
         "Addressable (EUR)",
     ]
-    chain = app.dataframe[0].value
+    chain = app.main.dataframe[0].value
     assert list(chain["Step"]) == [
         "Gross spend",
         "Credit notes",
@@ -421,7 +421,7 @@ def test_lever_page_shows_the_calculation_openly(run_root, portfolio_xlsx):
     # The rates are an assumption and must be labelled as one, not buried.
     assert any("assumptions, not findings" in w.value for w in app.warning)
 
-    priority = app.dataframe[0].value
+    priority = app.main.dataframe[0].value
     assert list(priority.columns) == [
         "#", "Lever", "Spend it applies to", "Potential (base)", "Range", "Effort", "Confidence",
     ]
@@ -473,7 +473,7 @@ def test_summary_page_shows_every_tab(run_root, lever_run):
     assert any("assumptions, not findings" in w.value for w in app.warning)
     # The overview shows figures and tables, not only bullet points.
     assert len(app.metric) > 4
-    assert app.dataframe
+    assert app.main.dataframe
     # The export sits beside the title, so it is reachable from every tab rather
     # than behind one. Nothing is generated until it is asked for: a nine megabyte
     # workbook nobody wanted would be built on every visit.
@@ -528,3 +528,46 @@ def test_a_hedged_cost_type_is_named_before_the_table_that_buries_it(run_root, p
     assert "3,260,352" in warnings
     # The one it was sure about is not dragged into the warning.
     assert "CONSULTING" not in warnings
+
+
+def test_the_sidebar_takes_the_upload_before_a_run_exists(run_root):
+    app = _app()
+
+    assert not app.exception
+    assert "Upload" in [h.value for h in app.sidebar.subheader]
+    assert "AI budget (EUR)" in [n.label for n in app.sidebar.number_input]
+    # Nothing to report yet, so no usage block.
+    assert "AI usage" not in [h.value for h in app.sidebar.subheader]
+
+
+def test_the_cost_stays_in_the_sidebar_after_the_upload_field_is_gone(run_root, portfolio_xlsx):
+    """The upload disappears the moment a run starts; the spend must not."""
+    run_id = _analysed_run(portfolio_xlsx)
+
+    for page in ("review", "report"):
+        app = _page(page, run_id=run_id)
+
+        assert not app.exception
+        headings = [h.value for h in app.sidebar.subheader]
+        assert "AI usage" in headings, f"no usage block on the {page} page"
+        assert "Upload" not in headings
+
+
+def test_going_over_budget_warns_and_lets_the_analysis_finish(run_root, portfolio_xlsx):
+    from core import usage
+    from core.run import load_run, run_path
+
+    run_id = _analysed_run(portfolio_xlsx)
+    manifest = load_run(run_id)
+    (run_path(run_id) / "run.json").write_bytes(
+        manifest.model_copy(update={"budget_eur": 0.000001}).model_dump_json(indent=2).encode()
+    )
+    usage.record(run_id, "workbook_triage", "gpt-5-mini", 100_000, 100_000)
+
+    app = _page("report", run_id=run_id)
+
+    assert not app.exception
+    assert any("over" in e.value for e in app.sidebar.error)
+    assert any("not stopped" in e.value for e in app.sidebar.error)
+    # The page itself rendered regardless: a warning, not a gate.
+    assert app.main.title

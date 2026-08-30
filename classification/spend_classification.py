@@ -38,7 +38,9 @@ def run_spend_classification(run_id: str, *, client=None) -> SpendClassification
     summary = _cost_types(table, column)
     logger.info("spend classification: %d distinct cost type(s) from %r", len(summary), column)
 
-    result = run_agent(definition(), build_input(summary), client=client, logger=logger)
+    result = run_agent(
+        definition(), build_input(summary), client=client, logger=logger, run_id=run_id
+    )
     verdicts = {verdict.cost_type: verdict for verdict in result.output.verdicts}
 
     cost_types = []

@@ -34,8 +34,6 @@ def _unreadable_reason(data: bytes, filename: str) -> str | None:
 
 
 def render() -> None:
-    staged = _render_sidebar()
-
     st.title("Procurement Lever Intelligence")
     st.markdown(
         "Welcome. This platform turns the ERP exports of portfolio companies into one "
@@ -62,31 +60,10 @@ def render() -> None:
         "stay reconcilable against the source."
     )
 
-    if not staged:
-        st.info("Upload an ERP export in the sidebar to begin.")
+    st.info("Upload an ERP export in the sidebar to begin.")
 
 
-def _render_sidebar() -> list[dict]:
-    with st.sidebar:
-        st.subheader("Upload")
-        upload_round = st.session_state.get("upload_round", 0)
-        files = st.file_uploader(
-            "CSV or Excel export",
-            type=list(ALLOWED_EXTENSIONS),
-            accept_multiple_files=True,
-            key=f"uploader_{upload_round}",
-        )
-
-        staged = [item for item in map(_check_file, files or []) if item]
-        if st.button("Start analysis", type="primary", disabled=not staged):
-            _start_analysis(staged, upload_round)
-
-        _render_start_results()
-
-    return staged
-
-
-def _check_file(file) -> dict | None:
+def check_file(file) -> dict | None:
     data = file.getvalue()
     reason = _unreadable_reason(data, file.name)
     if reason:
@@ -96,38 +73,3 @@ def _check_file(file) -> dict | None:
     return {"data": data, "filename": file.name}
 
 
-def _start_analysis(staged: list[dict], upload_round: int) -> None:
-    if not api_key_configured():
-        st.error(
-            "OPENAI_API_KEY is not set, so the agents cannot run. Copy .env.example to "
-            ".env and add your key, then restart the app."
-        )
-        return
-
-    # A new run per analysis. Reusing one would overwrite the ingestion artifact
-    # while the triage and mapping artifacts of the previous attempt stayed behind,
-    # leaving the run describing two different things at once.
-    run_id = create_run().run_id
-    st.session_state["run_id"] = run_id
-    items = [StagedUpload(item["data"], item["filename"]) for item in staged]
-
-    try:
-        with st.status("Reading uploads", expanded=True) as status:
-            st.write(f"Storing {len(items)} file(s)")
-            store_files(run_id, items)
-            st.write("Working out which sheets hold data")
-            run_workbook_triage(run_id)
-            status.update(label="Sheets identified", state="complete")
-    except Exception as error:
-        st.session_state["start_results"] = [("error", f"Could not read the uploads: {error}")]
-        st.rerun()
-        return
-
-    st.session_state["upload_round"] = upload_round + 1
-    st.session_state["switch_to"] = "workbook_review"
-    st.rerun()
-
-
-def _render_start_results() -> None:
-    for level, message in st.session_state.pop("start_results", []):
-        getattr(st, level)(message)

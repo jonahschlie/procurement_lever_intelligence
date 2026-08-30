@@ -215,6 +215,7 @@ def _triage_file(run_id: str, manifest: FileManifest, client, logger: Logger) ->
         build_input(candidates, manifest.original_filename),
         client=client,
         logger=logger,
+        run_id=run_id,
     )
     return WorkbookTriage(
         original_filename=manifest.original_filename,

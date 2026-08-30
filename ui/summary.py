@@ -399,7 +399,11 @@ def _chat(run_id: str, table: pd.DataFrame) -> None:
     context = _context(run_id)
     with st.spinner("Reading the analysis"):
         try:
-            result = run_agent(chat_definition(context), chat_input(history[:-1], question))
+            result = run_agent(
+                chat_definition(context),
+                chat_input(history[:-1], question),
+                run_id=run_id,
+            )
             answer: ChatAnswer = result.output
             history.append(
                 {

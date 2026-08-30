@@ -503,9 +503,37 @@ class StepRecord(BaseModel):
     artifacts: list[str]
 
 
+class UsageEntry(BaseModel):
+    """One model call, as it was billed. Written once, where the call happened."""
+
+    at: datetime
+    stage: str
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cost_eur: float
+
+
+class Usage(BaseModel):
+    """What a run has spent so far."""
+
+    calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_eur: float = 0.0
+    unpriced_calls: int = 0
+
+    @property
+    def tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+
 class RunManifest(BaseModel):
     """Audit trail of a single run: when it started and what each step produced."""
 
     run_id: str
     created_at: datetime
     steps: list[StepRecord] = []
+    # What the run was allowed to spend on model calls. A warning threshold, not a
+    # gate. Absent on runs written before it existed.
+    budget_eur: float | None = None

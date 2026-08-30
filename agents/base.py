@@ -53,8 +53,16 @@ def run_agent(
     *,
     client=None,
     logger: Logger | None = None,
+    run_id: str | None = None,
 ) -> AgentRun:
-    """Call the model. ``client`` is the seam tests use to stay offline."""
+    """Call the model. ``client`` is the seam tests use to stay offline.
+
+    Every call is booked here, because this is the only place a call is made. The
+    alternative -- adding up the `llm_call` blocks in the artifacts afterwards --
+    counts a stage twice, since it writes the same call into both its proposed and
+    its confirmed artifact. Without a ``run_id`` there is no ledger to book to, so
+    the call simply goes uncounted rather than failing.
+    """
     client = client or build_client()
     started = time.perf_counter()
     response = client.responses.parse(
@@ -87,4 +95,17 @@ def run_agent(
             result.input_tokens,
             result.output_tokens,
         )
+    if run_id is not None:
+        _book(run_id, definition.name, result, logger)
     return result
+
+
+def _book(run_id: str, stage: str, result: AgentRun, logger: Logger | None) -> None:
+    """Record the call. An answer already paid for must not be lost to bookkeeping."""
+    from core.usage import record
+
+    try:
+        record(run_id, stage, result.model, result.input_tokens, result.output_tokens)
+    except Exception as error:
+        if logger is not None:
+            logger.warning("could not record usage for %s: %s", stage, error)

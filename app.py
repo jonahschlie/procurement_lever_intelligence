@@ -18,6 +18,7 @@ from ui import (
     report,
     review,
     schema_mapping,
+    sidebar,
     start,
     summary,
     workbook_review,
@@ -64,6 +65,9 @@ PAGES = {
 }
 
 navigation = st.navigation(list(PAGES.values()))
+
+# Before the page, so every screen carries the upload or the running AI cost.
+sidebar.render()
 
 # Screens request a jump by name; the switch has to happen before the page renders.
 target = st.session_state.pop("switch_to", None)

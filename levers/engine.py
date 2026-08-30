@@ -132,7 +132,7 @@ def run_levers(run_id: str, *, client=None) -> LeverArtifact:
         benchmark=_benchmark(rows),
         data_requests=_data_requests(results),
     )
-    artifact = _add_narrative(artifact, client, logger)
+    artifact = _add_narrative(artifact, client, logger, run_id)
 
     _write_columns(run_id, table, rows, memberships, primary)
     target = step_path(run_id, STEP)
@@ -331,7 +331,7 @@ def _benchmark(rows: pd.DataFrame) -> list[CompanyBenchmark]:
     return sorted(entries, key=lambda entry: -entry.uncontracted_share)
 
 
-def _add_narrative(artifact: LeverArtifact, client, logger) -> LeverArtifact:
+def _add_narrative(artifact: LeverArtifact, client, logger, run_id: str) -> LeverArtifact:
     payload = [
         {
             "lever_id": lever.lever_id,
@@ -372,7 +372,13 @@ def _add_narrative(artifact: LeverArtifact, client, logger) -> LeverArtifact:
         for entry in artifact.benchmark
     ]
 
-    result = run_agent(definition(), build_input(payload, benchmark), client=client, logger=logger)
+    result = run_agent(
+        definition(),
+        build_input(payload, benchmark),
+        client=client,
+        logger=logger,
+        run_id=run_id,
+    )
     narratives = {n.lever_id: n for n in result.output.levers}
 
     levers = [

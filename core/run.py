@@ -43,9 +43,11 @@ LOG_DIR_NAME = "logs"
 LOG_FILE_NAME = "run.log"
 
 
-def create_run() -> RunManifest:
+def create_run(budget_eur: float | None = None) -> RunManifest:
     created_at = datetime.now(timezone.utc)
-    manifest = RunManifest(run_id=_available_run_id(created_at), created_at=created_at)
+    manifest = RunManifest(
+        run_id=_available_run_id(created_at), created_at=created_at, budget_eur=budget_eur
+    )
     (run_path(manifest.run_id) / LOG_DIR_NAME).mkdir(parents=True)
     _write_manifest(manifest.run_id, manifest)
     get_logger(manifest.run_id).info("run created")

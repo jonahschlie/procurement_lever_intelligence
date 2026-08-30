@@ -206,6 +206,24 @@ the agent is only consulted about tables whose *meaning* is in question.
 Only column names, inferred types and at most five truncated sample values per column are sent to
 the model. What was sent is recorded in the run artifact.
 
+## AI cost
+
+Every model call is booked where it happens — `agents/base.py`, the only place a call is made —
+into `runs/<run>/usage.jsonl`, one appended line each. Deriving the cost from the artifacts
+afterwards would double-count: a stage writes the same `llm_call` into both its proposed and its
+confirmed artifact, so a scan of a real run found ten entries for five calls.
+
+The sidebar carries it on every screen: euros against the budget set at upload, calls, tokens, and
+a per-stage breakdown. The budget **warns and does not stop** — what a call costs is only known
+after it was made.
+
+Token prices live in `core/config.py` as `TOKEN_PRICES_USD`, matched by longest prefix so a dated
+build name (`gpt-5-mini-2025-08-07`) finds its family, and converted at the ECB rate already
+shipped for the spend conversion. **They are a working assumption, not verified list prices** —
+correct them there. The sidebar prints the token counts next to the euros, so a stale price makes
+the euro column wrong and nothing else. A model with no price counts zero calls and says so, rather
+than reading as free.
+
 ## Dependencies
 
 `requirements.txt` is generated, not edited:

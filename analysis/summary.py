@@ -298,7 +298,9 @@ def _levers(run_id: str) -> SummarySection | None:
 def _add_questions(run_id, summary, table, client, logger) -> ExecutiveSummary:
     context = analysis_context(run_id, table)
     try:
-        result = run_agent(definition(), build_input(context), client=client, logger=logger)
+        result = run_agent(
+            definition(), build_input(context), client=client, logger=logger, run_id=run_id
+        )
     except Exception as error:
         # Questions are commentary; losing them must not cost the summary.
         logger.warning("sme questions unavailable: %s", error)

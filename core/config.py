@@ -64,6 +64,28 @@ INTERCOMPANY_MATCH = 0.85
 # Share of company names a token must appear in to count as the group's own name.
 INTERCOMPANY_STEM_SHARE = 0.5
 
+# --- AI cost --------------------------------------------------------------
+# List prices in USD per 1 million tokens, as (input, output).
+#
+# NOT VERIFIED. Taken as a working assumption on 2026-08-30 so the sidebar has
+# something to multiply with -- look them up and correct them here. The figures
+# shown next to the euros are the token counts themselves, which are measured, so
+# a wrong price here makes the euro column wrong and nothing else.
+#
+# Matched by longest prefix: the API answers with a dated name such as
+# "gpt-5-mini-2025-08-07", and pinning the exact build here would silently drop to
+# zero the next time the model is rolled forward.
+TOKEN_PRICES_USD = {
+    "gpt-5-mini": (0.25, 2.00),
+    "gpt-5-nano": (0.05, 0.40),
+    "gpt-5": (1.25, 10.00),
+}
+
+# What a run may spend before the sidebar starts warning. A warning, not a gate:
+# the price of a call is only known after it was made.
+DEFAULT_BUDGET_EUR = 5.0
+
+
 # --- Levers ---------------------------------------------------------------
 # Saving rates are ASSUMPTIONS, not derived from any dataset. They live here so
 # they can be replaced with a firm's own benchmarks without touching logic, and

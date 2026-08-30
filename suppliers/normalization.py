@@ -281,7 +281,9 @@ def _judge(grey, table, master, client, run_id, logger):
         }
         for index, pair in enumerate(grey)
     ]
-    result = run_agent(definition(), build_input(payload), client=client, logger=logger)
+    result = run_agent(
+        definition(), build_input(payload), client=client, logger=logger, run_id=run_id
+    )
 
     by_id = {verdict.pair_id: verdict for verdict in result.output.verdicts}
     verdicts = []

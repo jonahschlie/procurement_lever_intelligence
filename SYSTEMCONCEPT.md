@@ -178,6 +178,7 @@ Dashboard
 | Lever Catalogue and Data Requests | 16.1 | built |
 | Executive Summary | 15, 17–19 | built |
 | Export (Excel and HTML) | 15 | built |
+| AI Cost Tracking | 2.4 | built |
 
 ---
 
@@ -1097,6 +1098,28 @@ Analytics      AI Reasoning
 ```
 
 ---
+
+## What the AI Costs
+
+Six model calls carry a run: triage, schema mapping, supplier matching, addressability, lever
+reasoning, and the questions for the business. A seventh appears every time someone asks the chat
+something, which is the one that can grow without bound.
+
+Booked at the single call site rather than summed from the artifacts. That is not a stylistic
+preference: a stage writes its `llm_call` into both the proposed and the confirmed artifact, so a
+scan of a real run returns **ten entries for five calls**. The ledger is `usage.jsonl` at the run
+root, one appended line per call, so an interrupted run keeps what it already spent.
+
+The budget is set at upload and lives on the run manifest. It **warns and does not stop**: the
+price of a call is only known once it has been made, so a threshold can report an overrun but
+cannot prevent one, and an interface that implied otherwise would be lying. The sidebar says so in
+the field's own help text.
+
+Prices are a constant in the configuration, matched by longest prefix because the API answers with
+a dated build (`gpt-5-mini-2025-08-07`) while the table holds a family. USD converts at the ECB
+rate the spend conversion already uses — the project has one idea of what a euro is. A model the
+table does not know costs zero and is counted separately, so zero reads as *unpriced* rather than
+as *free*.
 
 ## Handing the Analysis On
 

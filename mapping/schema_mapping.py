@@ -180,6 +180,7 @@ def _map_dataset(
         build_input(profiles, dataset.sheet),
         client=client,
         logger=logger,
+        run_id=run_id,
     )
     mappings = reconcile(result.output.mappings, [str(c) for c in frame.columns])
 
