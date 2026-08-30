@@ -37,27 +37,66 @@ def render() -> None:
     st.title("Procurement Lever Intelligence")
     st.markdown(
         "Welcome. This platform turns the ERP exports of portfolio companies into one "
-        "standardized procurement data model, and uses it to surface value creation "
-        "levers across the portfolio: supplier consolidation, category bundling, tail "
-        "spend reduction and contract optimization.\n\n"
-        "Anything that can be calculated is calculated. Spend figures, aggregations and "
-        "quality checks never pass through a language model. AI is used only where "
-        "meaning has to be interpreted."
+        "canonical spend model and derives procurement value creation levers from it — "
+        "a fixed catalogue of fifteen, quantified where the data carries them, with the "
+        "gap named where it does not.\n\n"
+        "Everything that can be calculated is calculated: amounts, deduplication, "
+        "currency conversion and every lever figure come from deterministic code. AI is "
+        "used only where meaning has to be interpreted — and every AI proposal is shown "
+        "to you for confirmation before it counts."
     )
 
-    st.subheader("How it works")
+    st.subheader("The eight steps")
     st.markdown(
-        "1. **Upload** one ERP export per portfolio company in the sidebar. Files are "
-        "stored unchanged and every value is read as text, so nothing is reinterpreted.\n"
-        "2. **Workbook review** — a submission is usually a workbook rather than a table. "
-        "Shape decides which sheets are data at all; an agent decides what each table is "
-        "for. You confirm before anything is analysed.\n"
-        "3. **Schema mapping** — the transaction columns are translated into the canonical "
-        "procurement schema, with a confidence score and a comment per field, which you "
-        "can correct.\n"
-        "4. **Data quality** — the table is measured for completeness, consistency and "
-        "embedded totals. Findings become flags; no row is ever deleted, so the figures "
-        "stay reconcilable against the source."
+        "| # | Step | What happens | Your part | AI |\n"
+        "|---|------|--------------|-----------|----|\n"
+        "| 1 | Upload *(sidebar)* | Files stored unchanged; encodings, delimiters and "
+        "number formats detected | Pick the files, set an AI budget | – |\n"
+        "| 2 | Workbook Review | Each sheet classified: transactions, supplier master, "
+        "FX rates, documentation | Confirm what each sheet is | proposes |\n"
+        "| 3 | Schema Mapping | Columns translated to the canonical schema, confidence "
+        "per field | Correct and confirm the mapping | proposes |\n"
+        "| 4 | Canonical Table | One portfolio-wide table; quality profiling, flags, EUR "
+        "conversion, company and supplier normalization, addressability | Watch it "
+        "build | prepares proposals |\n"
+        "| 5 | Review & Confirm | The one approval gate for everything that needs "
+        "judgement | Edit supplier groups, company merges, exclusions and addressability "
+        "— your word is final | you decide |\n"
+        "| 6 | Data Quality Report | Completeness, consistency, reconciliation, the "
+        "chain from gross to analysable spend | Read | – |\n"
+        "| 7 | Procurement Levers | The 15-lever catalogue: quantified where the data "
+        "carries it, missing fields named where it does not; every euro counted once | "
+        "Read — each saving rate is shown beside its figure | narrative only |\n"
+        "| 8 | Executive Summary | Findings, charts, open questions, a chat grounded in "
+        "this run's figures; Excel and HTML export | Ask questions, export, share | "
+        "summary, questions & chat |"
+    )
+
+    proposes, never = st.columns(2)
+    with proposes:
+        st.subheader("AI proposes, you confirm")
+        st.markdown(
+            "- which sheet holds data\n"
+            "- what each column means\n"
+            "- whether two supplier spellings are one firm — only the unclear pairs; "
+            "obvious matches merge deterministically\n"
+            "- whether a cost type is addressable by procurement\n"
+            "- narrative text: recommendations, summary, questions for the business"
+        )
+    with never:
+        st.subheader("Never AI")
+        st.markdown(
+            "- amounts, totals and every calculation\n"
+            "- duplicate detection and currency conversion (ECB reference rates)\n"
+            "- company merging\n"
+            "- lever quantification and both export files\n"
+            "- no row is ever deleted — findings become flags, so every figure "
+            "reconciles to the source"
+        )
+
+    st.markdown(
+        "Every run keeps a complete workspace: each proposal, each confirmation and the "
+        "AI cost ledger — the sidebar shows the spend live against your budget."
     )
 
     st.info("Upload an ERP export in the sidebar to begin.")
