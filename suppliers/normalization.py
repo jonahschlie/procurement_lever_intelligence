@@ -32,6 +32,7 @@ from core.models import (
 from core.run import get_logger, record_step, step_path
 from core.table import load_table, write_table
 from suppliers.candidates import CandidatePair, build_candidates
+from suppliers.intercompany import detect_intercompany
 
 STEP = "supplier_normalization"
 ARTIFACT_NAME = "supplier_normalization.json"
@@ -53,6 +54,10 @@ def run_supplier_normalization(run_id: str, *, client=None) -> SupplierNormaliza
     master = _load_master(run_id)
     pool = sorted(set(counts) | set(master))
 
+    # One clustering pass over every name. Intercompany is a label on the result,
+    # not a separate run, so moving a group between the two review blocks costs
+    # nothing to recompute.
+    intercompany = {c.supplier: c for c in detect_intercompany(table, sorted(counts))}
     auto, grey, _ = build_candidates(pool)
     logger.info(
         "supplier matching: %d name(s), %d auto pair(s), %d for the agent",
@@ -82,7 +87,7 @@ def run_supplier_normalization(run_id: str, *, client=None) -> SupplierNormaliza
                 )
             )
 
-    groups = _build_groups(pool, edges, counts, master)
+    groups = _build_groups(pool, edges, counts, master, intercompany)
     artifact = SupplierNormalizationArtifact(
         distinct_names=len(counts),
         groups=groups,
@@ -105,13 +110,14 @@ def confirm_suppliers(
     run_id: str,
     approvals: dict[int, bool] | None = None,
     names: dict[int, str] | None = None,
+    intercompany: dict[int, bool] | None = None,
 ) -> SupplierNormalizationArtifact:
     """Apply the user's decisions and write the canonical columns.
 
     A group the user does not approve falls apart: every member keeps its own
     identity. Approving is the only way names merge.
     """
-    approvals, names = approvals or {}, names or {}
+    approvals, names, intercompany = approvals or {}, names or {}, intercompany or {}
     artifact = _load(step_path(run_id, STEP) / ARTIFACT_NAME)
 
     groups = []
@@ -119,6 +125,13 @@ def confirm_suppliers(
         approved = approvals.get(group.group_id, group.approved)
         renamed = names.get(group.group_id, "").strip()
         updates: dict = {"approved": approved}
+        marked = intercompany.get(group.group_id, group.is_intercompany)
+        if marked != group.is_intercompany:
+            updates.update(
+                is_intercompany=marked,
+                intercompany_reason="Marked by the user." if marked else "",
+                source="user",
+            )
         if renamed and renamed != group.canonical_name:
             updates.update(canonical_name=renamed, source="user")
         if approved != group.approved:
@@ -197,7 +210,7 @@ def _judge(grey, table, master, client, run_id, logger):
     return verdicts, llm_call
 
 
-def _build_groups(pool, edges, counts, master) -> list[SupplierGroup]:
+def _build_groups(pool, edges, counts, master, intercompany=None) -> list[SupplierGroup]:
     parent = {name: name for name in pool}
 
     def find(name):
@@ -240,6 +253,8 @@ def _build_groups(pool, edges, counts, master) -> list[SupplierGroup]:
 
         master_hit = next((name for name in members if name in master), None)
         entry = master.get(master_hit, {}) if master_hit else {}
+        hits = [(intercompany or {}).get(name) for name in data_members]
+        hits = [hit for hit in hits if hit]
         sequence += 1
         groups.append(
             SupplierGroup(
@@ -254,6 +269,8 @@ def _build_groups(pool, edges, counts, master) -> list[SupplierGroup]:
                 master_id=entry.get("id") if master_hit else None,
                 country=entry.get("country") if master_hit else None,
                 contract_on_file=entry.get("contract") if master_hit else None,
+                is_intercompany=bool(hits),
+                intercompany_reason="; ".join(hits[0].reasons) if hits else "",
                 approved=approved,
             )
         )
@@ -261,10 +278,11 @@ def _build_groups(pool, edges, counts, master) -> list[SupplierGroup]:
 
 
 def _write_columns(run_id: str, artifact: SupplierNormalizationArtifact) -> None:
-    blank = {"name": "", "id": "", "country": "", "contract": "unknown"}
+    blank = {"name": "", "id": "", "country": "", "contract": "unknown", "intercompany": "no"}
     lookup: dict[str, dict[str, str]] = {}
     for group in artifact.groups:
         contract = CONTRACT_LABELS[group.contract_on_file]
+        intercompany = "yes" if group.is_intercompany else "no"
         if group.approved:
             for member in group.members:
                 lookup[member] = {
@@ -272,6 +290,7 @@ def _write_columns(run_id: str, artifact: SupplierNormalizationArtifact) -> None
                     "id": group.canonical_id,
                     "country": group.country or "",
                     "contract": contract,
+                    "intercompany": intercompany,
                 }
         else:
             # A rejected group falls apart, so its members keep their own identity
@@ -282,6 +301,7 @@ def _write_columns(run_id: str, artifact: SupplierNormalizationArtifact) -> None
                     "id": f"{group.canonical_id}-{index}",
                     "country": "",
                     "contract": "unknown",
+                    "intercompany": intercompany,
                 }
 
     table = load_table(run_id)
@@ -295,8 +315,12 @@ def _write_columns(run_id: str, artifact: SupplierNormalizationArtifact) -> None
     table["supplier_country"] = column("country")
     # Rows with no supplier at all say nothing about contracts either.
     table["supplier_contract_status"] = column("contract").where(raw != "", "")
+    table["flag_intercompany"] = column("intercompany", "no") == "yes"
     write_table(
-        run_id, table, STEP, note="canonical supplier names, ids, countries and contract status"
+        run_id,
+        table,
+        STEP,
+        note="canonical supplier names, ids, countries, contract status and intercompany",
     )
 
 

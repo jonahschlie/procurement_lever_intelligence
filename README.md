@@ -19,10 +19,15 @@ Implemented so far:
    engine turns the findings into flags and decides which rows each analysis may use.
 6. **Currency** — amounts are converted to EUR at the ECB daily rate of their posting date. Spend
    counts net, with gross and credit volume reported alongside.
-7. **Suppliers** — name variants are matched deterministically, the unclear pairs judged by an
-   agent, and every merge confirmed before it becomes canonical. Contract status from the
-   submitted supplier master is carried through, which surfaces the first lever: spend sitting
-   with suppliers that have no contract on file.
+7. **Suppliers and intercompany** — name variants are matched deterministically, the unclear pairs
+   judged by an agent. Suppliers that are the group's own entities are detected from the company
+   names in the data itself and separated out.
+8. **Addressability** — cost types procurement cannot influence (payroll, tax, financing,
+   provisions) are classified once and excluded from the negotiable figure.
+
+Everything requiring judgement is gathered on one **Review & Confirm** screen; everything automatic
+appears afterwards in one **Data Quality Report**, which ends in the chain from gross spend to
+addressable spend.
 
 The spend cube and the analytical views follow.
 
@@ -78,7 +83,14 @@ runs/run_20260829_233045/
     08_supplier_normalization/
         supplier_normalization.json            # candidates, agent verdicts, clusters
         supplier_normalization_confirmed.json  # what the user approved
+    09_spend_classification/
+        spend_classification.json              # addressability per cost type
+        spend_classification_confirmed.json
 ```
+
+Pipeline stages and screens are deliberately not the same thing: the run keeps every stage as its
+own numbered directory for auditability, while the UI collapses them into one decision screen and
+one report.
 
 `ecb_fx_reference_rates.csv` in the repository root holds the ECB daily reference rates.
 Conversion reads it rather than the network, so it works offline and a run reproduces against the

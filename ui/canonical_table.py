@@ -7,7 +7,6 @@ from core.canonical import field_by_key
 from core.config import PREVIEW_ROWS
 from core.run import run_path
 from core.table import has_table, load_table, load_table_meta
-from profiling.data_profiling import has_report, run_profiling
 from transform.canonical_table import load_report
 
 
@@ -71,9 +70,39 @@ def render() -> None:
     st.caption(f"Stored at {run_path(run_id) / 'canonical_table.parquet'}")
 
     st.divider()
-    if st.button("Run data quality checks", type="primary"):
-        with st.spinner("Profiling the table"):
-            if not has_report(run_id):
-                run_profiling(run_id)
-        st.session_state["switch_to"] = "data_quality"
-        st.rerun()
+    if st.button("Run analysis", type="primary"):
+        _run_analysis(run_id)
+
+
+def _run_analysis(run_id: str) -> None:
+    """Everything automatic, in one wait, so the review screen needs no spinners."""
+    from classification.spend_classification import run_spend_classification
+    from fx.currency import run_currency
+    from fx.ecb import load_reference_rates
+    from profiling.data_profiling import confirm_profiling, has_report, run_profiling
+    from suppliers.normalization import has_artifact, run_supplier_normalization
+    from transform.rule_engine import run_rule_engine
+
+    with st.status("Running the analysis", expanded=True) as status:
+        if not has_report(run_id):
+            st.write("Measuring data quality")
+            run_profiling(run_id)
+            # Provisional, so the stages below have flags to work with. The user's
+            # decisions on the review screen replace this.
+            confirm_profiling(run_id)
+            run_rule_engine(run_id)
+
+            st.write("Converting amounts to EUR")
+            run_currency(run_id, load_reference_rates())
+
+        if not has_artifact(run_id):
+            st.write("Matching supplier names and finding intercompany entities")
+            run_supplier_normalization(run_id)
+
+            st.write("Classifying which cost types procurement can influence")
+            run_spend_classification(run_id)
+
+        status.update(label="Ready for review", state="complete")
+
+    st.session_state["switch_to"] = "review"
+    st.rerun()

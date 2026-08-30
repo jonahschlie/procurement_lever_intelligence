@@ -34,7 +34,11 @@ ELIGIBILITY_COLUMNS = (
     "include_supplier_analysis",
     "include_company_analysis",
     "include_category_analysis",
+    "include_addressable_spend",
 )
+
+# Written by later stages; absent on the first pass through the rule engine.
+LATER_FLAGS = ("flag_intercompany", "flag_non_addressable")
 
 
 def run_rule_engine(run_id: str) -> RuleReport:
@@ -174,9 +178,16 @@ def _eligibility(
     usable_currency = ~flags["flag_missing_currency"] | table["amount_group_value"].notna()
     spend = ~flags["flag_aggregate_row"] & amount.notna() & usable_currency
 
+    # Intercompany and addressability are decided after this stage runs the first
+    # time. Absent, they exclude nothing -- eligibility narrows as they arrive.
+    intercompany = _existing(table, "flag_intercompany")
+    non_addressable = _existing(table, "flag_non_addressable")
+
     return {
         "include_spend_analysis": spend,
-        "include_supplier_analysis": spend & ~flags["flag_missing_supplier"],
+        # The group buying from itself is not a supplier relationship, so it
+        # leaves supplier analyses even though its spend is real.
+        "include_supplier_analysis": spend & ~flags["flag_missing_supplier"] & ~intercompany,
         "include_company_analysis": spend & ~flags["flag_missing_company"],
         "include_category_analysis": (
             spend
@@ -184,7 +195,14 @@ def _eligibility(
             & ~flags["flag_category_is_supplier"]
             & category_enabled
         ),
+        "include_addressable_spend": spend & ~intercompany & ~non_addressable,
     }
+
+
+def _existing(table: pd.DataFrame, column: str) -> pd.Series:
+    if column not in table.columns:
+        return pd.Series(False, index=table.index)
+    return table[column].fillna(False).astype(bool)
 
 
 _RULE_LABELS = {

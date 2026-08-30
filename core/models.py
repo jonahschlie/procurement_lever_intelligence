@@ -288,6 +288,9 @@ class SupplierGroup(BaseModel):
     # None where the supplier is not in the master at all: that is "unknown",
     # which is a different statement from "no contract on file".
     contract_on_file: bool | None = None
+    # A cluster of the group's own entities: not procurement spend at all.
+    is_intercompany: bool = False
+    intercompany_reason: str = ""
     approved: bool
 
 
@@ -303,6 +306,41 @@ class SupplierNormalizationArtifact(BaseModel):
     groups: list[SupplierGroup]
     rejected: list[RejectedPair]
     llm_call: LlmCall | None
+
+
+class CostTypeClass(BaseModel):
+    """One cost type and whether procurement can influence it."""
+
+    cost_type: str
+    addressable: bool
+    confidence: float
+    comment: str
+    spend: float
+    rows: int
+    decided_by: DecidedBy = "ai"
+
+
+class SpendClassificationArtifact(BaseModel):
+    source_column: str
+    cost_types: list[CostTypeClass]
+    llm_call: LlmCall | None
+
+
+class SpendChainStep(BaseModel):
+    label: str
+    amount: float
+    delta: float | None = None
+    note: str = ""
+
+
+class SpendReport(BaseModel):
+    """The chain from what was booked to what procurement can act on."""
+
+    rows_total: int
+    rows_analysed: int
+    chain: list[SpendChainStep]
+    intercompany_rows: int
+    intercompany_suppliers: list[str]
 
 
 class StepRecord(BaseModel):

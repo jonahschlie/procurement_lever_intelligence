@@ -66,7 +66,23 @@ The split runs in both directions. A sheet that is not a table is classified as 
 
 Everything is read and carried as **text** until the rule engine runs. Type inference during ingestion would strip leading zeros from supplier identifiers (`0000123456`) and misread continental decimal formats (`1.250,00`). Typing, normalization and currency conversion are the rule engine's job, where they are deterministic and auditable.
 
-## 2.3 Data Minimization
+## 2.3 What the User Decides
+
+Not every finding is a question. The line is not "simple versus complex" but
+**"is there anything to decide?"**
+
+A missing invoice number has exactly one correct treatment, so nobody is asked:
+it is flagged, the affected analyses skip the row, and it appears in the report
+afterwards. Whether a supplier belongs to the group, or whether a cost type can be
+negotiated, cannot be measured — those go to a person.
+
+Everything requiring judgement is gathered on **one screen**, preselected with the
+best available proposal, and confirmed in a single action. Everything automatic
+appears afterwards in **one report**. Mixing the two is what makes a pipeline feel
+opaque: a user asked to confirm things that were never in doubt stops reading the
+ones that were.
+
+## 2.4 Data Minimization
 
 Client data leaves the machine only where a model genuinely needs it: column names, inferred types and at most **five sample values per column, truncated to 60 characters**. What was sent is recorded in the run artifact, so it can be reviewed after the fact.
 
@@ -155,6 +171,7 @@ Dashboard
 | Rule Engine | 11 | built |
 | Currency Harmonization | 13 | built |
 | Supplier Normalization | 11 | built |
+| Intercompany and Addressability | 11 | built |
 | Canonical Spend Cube | 14 | open |
 | Analytical Views and AI Reasoning | 15–19 | open |
 
@@ -656,6 +673,59 @@ SA
 Original values remain stored.
 
 ---
+
+## Intercompany Spend
+
+A portfolio company billing a sister company is not procurement spend. Nothing
+about it is negotiable, and counting it inflates every supplier figure. On a real
+submission it was **9.6% of net spend across 1,648 rows** — five of the group's
+eight entities appeared as suppliers.
+
+Group membership is stated nowhere, so it is derived from two independent signals,
+neither of which hardcodes a name:
+
+**The data names its own companies.** Every row carries the entity that booked it.
+A supplier name close to one of those entities is the group buying from itself.
+
+**Entities share a stem.** Tokens appearing in most of the group's company names
+are the group's own name. Suppliers carrying that stem are candidates.
+
+On the submission in hand both signals independently returned the same five
+suppliers, the first at similarity 1.00, and the stem was derived rather than
+configured. Rows flagged as aggregates are excluded from the derivation first — a
+grand total row carries the group name in its company column and would otherwise
+nominate itself as an entity.
+
+What neither signal sees is a group entity appearing *only* as a supplier and in
+no company column — a parent outside the analysed scope. The review screen
+therefore lets a supplier be marked intercompany by hand.
+
+Effect: flagged, excluded from supplier analyses, and subtracted in the spend
+chain. The spend itself is real and stays in the table.
+
+## Addressable Spend
+
+Payroll, taxes, interest and provisions sit in the same ledger as consulting and
+freight, but no sourcing exercise changes them. Reporting them as spend overstates
+every lever derived later.
+
+The distinction is drawn over the **distinct cost types**, not the rows: a chart of
+accounts holds tens of labels, so one model call classifies all of them. The agent
+reads meaning rather than keywords, which is what makes it work in any language and
+any chart of accounts — `PERSONNEL COSTS`, `Personalaufwand` and `Coûts de personnel`
+are the same thing to it, and a keyword list is precisely the mistake section 10.3
+already taught.
+
+Not addressable: payroll, taxes and duties, financing costs, accounting entries
+(provisions, accruals, depreciation), intercompany recharges, statutory fees.
+Everything bought from a third party under negotiable terms is addressable, utilities
+included.
+
+A cost type the agent does not judge stays **addressable**: spend excluded by
+nobody's decision would disappear from the analysis unnoticed, whereas spend wrongly
+included merely gets examined and dismissed.
+
+Measured: 12.4m EUR of 127.6m third party spend, leaving 115.2m addressable.
 
 ## Supplier Duplicate Detection
 

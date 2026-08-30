@@ -236,55 +236,9 @@ def _canonical_run(portfolio_xlsx):
     return run_id
 
 
-def test_data_quality_page_is_empty_without_a_report(run_root):
-    app = _page("data_quality")
-
-    assert not app.exception
-    assert app.title[0].value == "Data Quality"
-    assert "No quality report yet" in app.info[0].value
 
 
-def test_data_quality_page_shows_findings_and_asks_before_excluding(run_root, portfolio_xlsx):
-    run_id = _canonical_run(portfolio_xlsx)
-    run_profiling(run_id)
 
-    app = _page("data_quality", run_id=run_id)
-
-    assert not app.exception
-    findings = app.dataframe[0].value
-    assert "Check" in findings.columns
-    assert len(findings) > 0
-    # Nothing is applied until the user says so.
-    assert [button.label for button in app.button] == ["Apply rules"]
-
-
-def test_data_quality_page_reports_the_outcome_once_applied(run_root, portfolio_xlsx):
-    run_id = _canonical_run(portfolio_xlsx)
-    run_profiling(run_id)
-    confirm_profiling(run_id)
-    run_rule_engine(run_id)
-
-    app = _page("data_quality", run_id=run_id)
-
-    assert not app.exception
-    labels = [metric.label for metric in app.metric]
-    assert labels == ["Spend before (raw)", "Spend after exclusions (raw)", "Rows excluded"]
-
-
-def test_currency_page_is_empty_without_a_conversion(run_root):
-    app = _page("currency")
-
-    assert not app.exception
-    assert app.title[0].value == "Currency"
-    assert "No conversion yet" in app.info[0].value
-
-
-def test_suppliers_page_is_empty_without_matching(run_root):
-    app = _page("suppliers")
-
-    assert not app.exception
-    assert app.title[0].value == "Suppliers"
-    assert "No supplier matching yet" in app.info[0].value
 
 
 def _ruled_run(portfolio_xlsx):
@@ -314,44 +268,111 @@ def _ruled_run(portfolio_xlsx):
     return run_id
 
 
-def test_currency_page_reports_the_conversion(run_root, portfolio_xlsx):
+
+
+def _analysed_run(portfolio_xlsx):
+    """A run taken through everything the review screen expects to find."""
+    from agents.spend_addressability import AddressabilityProposal
+    from agents.supplier_matching import SupplierMatchProposal
+    from classification.spend_classification import run_spend_classification
     from fx.currency import run_currency
     from fx.ecb import parse_ecb_csv
+    from profiling.data_profiling import confirm_profiling as _confirm
+    from suppliers.normalization import run_supplier_normalization
+    from transform.rule_engine import run_rule_engine as _rules
 
     run_id = _ruled_run(portfolio_xlsx)
-    rates = parse_ecb_csv(
-        "Date,SEK,\n2025-01-10,11.50,\n2025-02-03,11.40,\n2025-03-03,11.30,\n"
+    run_currency(
+        run_id,
+        parse_ecb_csv("Date,SEK,\n2025-01-10,11.50,\n2025-02-03,11.40,\n2025-03-03,11.30,\n"),
     )
-    run_currency(run_id, rates)
+    run_supplier_normalization(run_id, client=FakeClient(SupplierMatchProposal(verdicts=[])))
+    run_spend_classification(run_id, client=FakeClient(AddressabilityProposal(verdicts=[])))
+    return run_id
 
-    app = _page("currency", run_id=run_id)
+
+def test_review_screen_is_empty_before_the_analysis(run_root):
+    app = _page("review")
 
     assert not app.exception
-    labels = [metric.label for metric in app.metric]
-    assert labels == ["Net spend (EUR)", "Gross spend (EUR)", "Credit volume (EUR)"]
-    breakdown = app.dataframe[0].value
-    assert set(breakdown["Currency"]) == {"EUR", "SEK"}
+    assert app.title[0].value == "Review & Confirm"
+    assert "Nothing to review yet" in app.info[0].value
 
 
-def test_suppliers_page_shows_queue_then_result(run_root, portfolio_xlsx):
-    from suppliers.normalization import confirm_suppliers, run_supplier_normalization
-    from agents.supplier_matching import PairVerdict, SupplierMatchProposal
+def test_report_is_empty_before_anything_is_confirmed(run_root):
+    app = _page("report")
 
-    run_id = _ruled_run(portfolio_xlsx)
+    assert not app.exception
+    assert app.title[0].value == "Data Quality Report"
+    assert "No report yet" in app.info[0].value
+
+
+def test_review_screen_gathers_every_decision_behind_one_button(run_root, portfolio_xlsx):
+    run_id = _analysed_run(portfolio_xlsx)
+
+    app = _page("review", run_id=run_id)
+
+    assert not app.exception
+    headings = [h.value for h in app.subheader]
+    # Block 1 is conditional by design: this workbook holds no total rows, so it
+    # is not shown at all rather than shown empty.
+    assert any(h.startswith("2 ·") for h in headings)  # intercompany
+    assert any(h.startswith("3 ·") for h in headings)  # suppliers
+    assert any(h.startswith("4 ·") for h in headings)  # currencies
+    # One confirmation for all of it.
+    assert [b.label for b in app.button] == ["Confirm and continue"]
+
+
+def test_the_total_rows_block_appears_when_there_are_total_rows(run_root, defective_run):
+    from agents.spend_addressability import AddressabilityProposal
+    from agents.supplier_matching import SupplierMatchProposal
+    from classification.spend_classification import run_spend_classification
+    from fx.currency import run_currency
+    from fx.ecb import parse_ecb_csv
+    from profiling.data_profiling import confirm_profiling, run_profiling
+    from suppliers.normalization import run_supplier_normalization
+    from transform.rule_engine import run_rule_engine
+
+    run_profiling(defective_run)
+    confirm_profiling(defective_run)
+    run_rule_engine(defective_run)
+    run_currency(defective_run, parse_ecb_csv("Date,PLN,\n2024-01-12,4.00,\n"))
     run_supplier_normalization(
-        run_id,
-        client=FakeClient(SupplierMatchProposal(verdicts=[])),
+        defective_run, client=FakeClient(SupplierMatchProposal(verdicts=[]))
+    )
+    run_spend_classification(
+        defective_run, client=FakeClient(AddressabilityProposal(verdicts=[]))
     )
 
-    queue = _page("suppliers", run_id=run_id)
-    assert not queue.exception
-    assert [button.label for button in queue.button] == ["Confirm suppliers"]
+    app = _page("review", run_id=defective_run)
 
+    assert not app.exception
+    assert any(h.value.startswith("1 · Total rows") for h in app.subheader)
+
+
+def test_report_shows_the_chain_from_booked_to_negotiable(run_root, portfolio_xlsx):
+    from classification.spend_classification import confirm_classification
+    from suppliers.normalization import confirm_suppliers
+
+    run_id = _analysed_run(portfolio_xlsx)
     confirm_suppliers(run_id)
-    result = _page("suppliers", run_id=run_id)
-    assert not result.exception
-    assert [metric.label for metric in result.metric] == [
-        "Raw names",
-        "Canonical suppliers",
-        "Merges applied",
+    confirm_classification(run_id)
+
+    app = _page("report", run_id=run_id)
+
+    assert not app.exception
+    assert [m.label for m in app.metric][:3] == [
+        "Net spend (EUR)",
+        "Third party (EUR)",
+        "Addressable (EUR)",
+    ]
+    chain = app.dataframe[0].value
+    assert list(chain["Step"]) == [
+        "Gross spend",
+        "Credit notes",
+        "Net spend",
+        "Intercompany",
+        "Third party spend",
+        "Not addressable",
+        "Addressable spend",
     ]

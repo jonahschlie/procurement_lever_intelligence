@@ -50,3 +50,9 @@ ECB_RATES_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.zip"
 # the pair is not a candidate at all.
 SUPPLIER_AUTO_MERGE = 0.95
 SUPPLIER_CANDIDATE_FLOOR = 0.70
+
+# A supplier name this close to one of the group's own company names is the group
+# buying from itself.
+INTERCOMPANY_MATCH = 0.85
+# Share of company names a token must appear in to count as the group's own name.
+INTERCOMPANY_STEM_SHARE = 0.5
