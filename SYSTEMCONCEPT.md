@@ -826,7 +826,36 @@ included merely gets examined and dismissed.
 
 Measured: 12.4m EUR of 127.6m third party spend, leaving 115.2m addressable.
 
+## Analysable Spend
+
+Addressable is not the same as actionable. Every lever needs a counterparty: a
+booking with no supplier cannot be consolidated, matched to a contract or placed in
+a tail, however negotiable its cost type is. So the spend chain runs one step
+further than the addressability decision.
+
+```text
+Addressable spend            115,217,899
+  no supplier name            −4,155,712     5,885 rows
+Analysable spend             111,062,187     what every lever is measured against
+```
+
+Measured on a real submission: 5,885 of 15,195 addressable rows carry no supplier
+at all — 35% of the rows, 3.6% of the money, spread over ordinary accounts
+(`ESS - SUBCONTRACTS`, `SPECIALIZED SERVICES`, `CONSULTING`). The supplier column
+was simply empty there; nothing was lost in normalization.
+
+This step exists because both figures were previously called *addressable spend* on
+two different screens, and the 4.2m difference appeared on neither. Stating it makes
+the report end where the levers begin, and turns the gap into what it is: spend that
+is one field away from being analysable.
+
 ## Supplier Duplicate Detection
+
+The pool is built from **bookings only**. A subtotal row carries its own marker in
+the supplier column, so left in it becomes a name to be grouped — carrying no spend,
+but inflating the supplier count and putting a row in front of the reviewer that
+means nothing. The same filter already guards company normalization and intercompany
+detection; all three now share it.
 
 Frequently there is no supplier identifier at all — on a real submission the
 column was entirely absent — so matching works on names alone. Three stages,

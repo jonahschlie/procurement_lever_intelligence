@@ -324,3 +324,26 @@ def test_a_split_group_does_not_hand_the_master_entry_to_the_wrong_half(name_run
     for member in others:
         assert by_name[member].contract_on_file is None
         assert by_name[member].country is None
+
+
+def test_an_embedded_total_is_not_a_supplier_to_group(name_run):
+    """A subtotal row carries its own marker in the supplier column.
+
+    Left in the pool it becomes a name to group: carrying no spend, but inflating
+    the supplier count and putting a row in front of the user that means nothing.
+    """
+    from profiling.data_profiling import confirm_profiling, run_profiling
+    from transform.rule_engine import run_rule_engine
+
+    run_profiling(name_run)
+    confirm_profiling(name_run)
+    run_rule_engine(name_run)
+
+    artifact = run_supplier_normalization(name_run, client=FakeClient(_same()))
+
+    pool = {member for group in artifact.groups for member in group.members}
+    assert "*** SUBTOTAL ***" not in pool
+    assert artifact.distinct_names == len(pool)
+    # The rows themselves are untouched -- flagged, never deleted.
+    table = load_table(name_run)
+    assert (table["supplier"] == "*** SUBTOTAL ***").sum() == 1

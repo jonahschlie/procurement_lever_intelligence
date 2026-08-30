@@ -266,3 +266,16 @@ def duplicate_key(table: pd.DataFrame) -> pd.DataFrame:
         if column in table.columns:
             frame[column] = table[column]
     return frame
+
+
+def bookings(table: pd.DataFrame) -> pd.DataFrame:
+    """The rows that record a booking, without the totals an export embedded.
+
+    Anything deriving a population from the data itself has to ask for this
+    first. A grand total row carries the group's name in its company column and
+    its own marker as a supplier; left in, it nominates itself as a company and
+    turns up in the supplier list as a name to group.
+    """
+    if "flag_aggregate_row" not in table.columns:
+        return table
+    return table[~table["flag_aggregate_row"].fillna(False).astype(bool)]

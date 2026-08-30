@@ -59,7 +59,7 @@ def test_a_silent_agent_leaves_every_figure_intact(lever_run):
     artifact = run_levers(lever_run, client=FakeClient(empty))
 
     assert artifact.total_base > 0
-    assert sum(l.net_base for l in artifact.levers) == pytest.approx(artifact.addressable_spend)
+    assert sum(l.net_base for l in artifact.levers) == pytest.approx(artifact.analysable_spend)
 
 
 def test_an_invented_lever_id_in_the_order_is_dropped(lever_run):

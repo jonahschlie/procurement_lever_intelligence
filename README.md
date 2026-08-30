@@ -31,8 +31,9 @@ Implemented so far:
    provisions) are classified once and excluded from the negotiable figure.
 
 Everything requiring judgement is gathered on one **Review & Confirm** screen; everything automatic
-appears afterwards in one **Data Quality Report**, which ends in the chain from gross spend to
-addressable spend.
+appears afterwards in one **Data Quality Report**, which ends in the chain from gross spend down to
+analysable spend — addressable spend less the bookings that name no supplier, which is what the
+levers are measured against.
 
 10. **Levers** — a fixed catalogue of fifteen standard procurement levers tested against the data.
     Those the data supports are quantified with a saving range, every euro credited to exactly one

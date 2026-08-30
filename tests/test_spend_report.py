@@ -108,3 +108,54 @@ def test_intercompany_entities_are_named():
 
     assert report.intercompany_suppliers == ["Zenith Iberia"]
     assert report.intercompany_rows == 1
+
+
+def test_the_chain_runs_on_to_what_the_levers_can_act_on(run_root):
+    """Addressable spend is not the lever base: every lever needs a counterparty.
+
+    Left implicit, the report and the lever page quote different figures under the
+    same word, and the difference appears on neither screen.
+    """
+    import pandas as pd
+
+    from analysis.spend_report import spend_chain
+
+    table = pd.DataFrame(
+        {
+            "amount_eur": [100.0, 60.0, 40.0],
+            "include_spend_analysis": [True, True, True],
+            "flag_intercompany": [False, False, False],
+            "flag_non_addressable": [False, False, False],
+            "supplier_normalized": ["Atlas", "", "Sopra"],
+        }
+    )
+
+    steps = {step.label: step.amount for step in spend_chain(table).chain}
+
+    assert steps["Addressable spend"] == 200.0
+    assert steps["No supplier name"] == 60.0
+    assert steps["Analysable spend"] == 140.0
+
+
+def test_a_row_already_deducted_is_not_deducted_twice(run_root):
+    """An unnamed supplier inside intercompany or non-addressable spend has already
+    left the chain, so it must not be subtracted again."""
+    import pandas as pd
+
+    from analysis.spend_report import spend_chain
+
+    table = pd.DataFrame(
+        {
+            "amount_eur": [100.0, 50.0, 30.0],
+            "include_spend_analysis": [True, True, True],
+            "flag_intercompany": [False, True, False],
+            "flag_non_addressable": [False, False, True],
+            "supplier_normalized": ["Atlas", "", ""],
+        }
+    )
+
+    steps = {step.label: step.amount for step in spend_chain(table).chain}
+
+    assert steps["Addressable spend"] == 100.0
+    assert steps["No supplier name"] == 0.0
+    assert steps["Analysable spend"] == 100.0

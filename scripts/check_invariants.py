@@ -57,7 +57,7 @@ def report(run_id: str) -> None:
 
     if has_levers(run_id):
         artifact = load_levers(run_id)
-        print(f"  addressable spend       {artifact.addressable_spend:>18,.0f}")
+        print(f"  analysable spend        {artifact.analysable_spend:>18,.0f}")
         print(
             f"  potential low/base/high {artifact.total_low:>18,.0f} "
             f"{artifact.total_base:>14,.0f} {artifact.total_high:>14,.0f}"

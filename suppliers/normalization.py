@@ -23,6 +23,7 @@ import pandas as pd
 
 from agents.base import run_agent
 from agents.supplier_matching import build_input, definition
+from core.canonical import bookings
 from core.models import (
     LlmCall,
     RejectedPair,
@@ -50,7 +51,12 @@ def run_supplier_normalization(run_id: str, *, client=None) -> SupplierNormaliza
     logger = get_logger(run_id)
     table = load_table(run_id)
 
-    counts = Counter(name for name in table["supplier"].astype(str).str.strip() if name)
+    # Bookings only. A subtotal row carries its own marker in the supplier column,
+    # so left in it becomes a name to group -- carrying no spend, but inflating the
+    # supplier count and putting a row in front of the user that means nothing.
+    counts = Counter(
+        name for name in bookings(table)["supplier"].astype(str).str.strip() if name
+    )
     master = _load_master(run_id)
     pool = sorted(set(counts) | set(master))
 

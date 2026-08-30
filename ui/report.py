@@ -95,6 +95,10 @@ def _chain(report) -> None:
         column_config={"": st.column_config.TextColumn(width="small"), "EUR": money()},
     )
     st.caption(
+        "The last two steps are where this report hands over to the levers: a booking with "
+        "no supplier is negotiable in principle, but there is no counterparty to consolidate, "
+        "match to a contract or place in a tail. Every lever is measured against the final "
+        "figure.  \n"
         f"{report.rows_analysed:,} of {report.rows_total:,} rows enter the analysis. "
         "The rest are total rows or rows without a usable amount — flagged, never deleted, "
         "so the table still reconciles against the source export."

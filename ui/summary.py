@@ -68,9 +68,10 @@ def _overview(summary, artifact, table) -> None:
     if artifact:
         left, middle, right, far = st.columns(4)
         left.metric(
-            "Addressable spend (EUR)",
-            eur_compact(artifact.addressable_spend),
-            help=eur(artifact.addressable_spend),
+            "Analysable spend (EUR)",
+            eur_compact(artifact.analysable_spend),
+            help=f"{eur(artifact.analysable_spend)} — addressable spend less the bookings "
+            "that name no supplier",
         )
         middle.metric(
             "Identified potential (EUR)",

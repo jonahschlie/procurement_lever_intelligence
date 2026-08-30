@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 
 FileFormat = Literal["csv", "xlsx"]
 DecidedBy = Literal["ai", "user"]
@@ -443,7 +443,12 @@ class DataRequest(BaseModel):
 
 
 class LeverArtifact(BaseModel):
-    addressable_spend: float
+    # Addressable spend less the bookings with no supplier name: every lever needs
+    # a counterparty. Runs written before that distinction existed called the same
+    # figure addressable_spend, and still load.
+    analysable_spend: float = Field(
+        validation_alias=AliasChoices("analysable_spend", "addressable_spend")
+    )
     levers: list[LeverResult]
     data_requests: list[DataRequest] = []
     total_low: float

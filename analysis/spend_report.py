@@ -34,6 +34,15 @@ def spend_chain(table: pd.DataFrame) -> SpendReport:
     non_addressable_spend = float(eur[non_addressable].sum())
     addressable = third_party - non_addressable_spend
 
+    # Where the report ends is where the levers begin, so the chain runs one step
+    # further. A booking with no supplier is negotiable in principle but cannot be
+    # consolidated, matched to a contract or placed in a tail -- every lever works
+    # on a named counterparty. Without this step the two screens quote different
+    # figures under the same word.
+    unnamed = analysed & ~intercompany & ~non_addressable & ~_named(table)
+    unnamed_spend = float(eur[unnamed].sum())
+    analysable = addressable - unnamed_spend
+
     chain = [
         SpendChainStep(label="Gross spend", amount=gross, note="positive bookings only"),
         SpendChainStep(
@@ -58,6 +67,17 @@ def spend_chain(table: pd.DataFrame) -> SpendReport:
             amount=addressable,
             note="what procurement can negotiate",
         ),
+        SpendChainStep(
+            label="No supplier name",
+            amount=unnamed_spend,
+            delta=-unnamed_spend,
+            note="negotiable, but no counterparty to act on",
+        ),
+        SpendChainStep(
+            label="Analysable spend",
+            amount=analysable,
+            note="what the levers are measured against",
+        ),
     ]
 
     suppliers = sorted(
@@ -75,6 +95,14 @@ def spend_chain(table: pd.DataFrame) -> SpendReport:
         intercompany_rows=int(intercompany.sum()),
         intercompany_suppliers=suppliers,
     )
+
+
+def _named(table: pd.DataFrame) -> pd.Series:
+    """Rows carrying a supplier, canonical where normalization has run."""
+    for column in ("supplier_normalized", "supplier"):
+        if column in table.columns:
+            return table[column].astype(str).str.strip() != ""
+    return pd.Series(True, index=table.index)
 
 
 def _flag(table: pd.DataFrame, column: str) -> pd.Series:

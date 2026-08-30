@@ -377,7 +377,7 @@ def _lever_context(run_id, table):
         return None
     artifact = load_artifact(run_id)
     return {
-        "addressable_spend": round(artifact.addressable_spend, 2),
+        "analysable_spend": round(artifact.analysable_spend, 2),
         "total_potential": {
             "low": round(artifact.total_low, 2),
             "base": round(artifact.total_base, 2),

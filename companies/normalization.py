@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from core.canonical import bookings
 from core.config import SUPPLIER_AUTO_MERGE
 from core.models import CompanyGroup, CompanyMember, CompanyNormalizationArtifact
 from core.run import get_logger, record_step, step_path
@@ -121,10 +122,7 @@ def _members(table: pd.DataFrame) -> list[CompanyMember]:
     Aggregate rows are left out. A grand total row carries the group's name in
     its company column and would otherwise nominate itself as a company.
     """
-    rows = table
-    if "flag_aggregate_row" in rows.columns:
-        rows = rows[~rows["flag_aggregate_row"].fillna(False).astype(bool)]
-
+    rows = bookings(table)
     frame = pd.DataFrame(
         {
             "dataset_id": rows["dataset_id"].astype(str).str.strip(),

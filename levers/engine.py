@@ -115,7 +115,7 @@ def run_levers(run_id: str, *, client=None) -> LeverArtifact:
         rows, {k: v for k, v in memberships.items() if BY_ID[k].kind in SPEND_KINDS}
     )
 
-    addressable = float(rows["amount_eur"].sum())
+    analysable = float(rows["amount_eur"].sum())
     results = [
         _measure(lever, rows, memberships.get(lever.lever_id), primary, *assessments[lever.lever_id])
         for lever in LEVERS
@@ -124,7 +124,7 @@ def run_levers(run_id: str, *, client=None) -> LeverArtifact:
 
     counted = [r for r in results if r.kind in SPEND_KINDS and r.status == "quantified"]
     artifact = LeverArtifact(
-        addressable_spend=addressable,
+        analysable_spend=analysable,
         levers=results,
         total_low=sum(r.potential_low for r in counted),
         total_base=sum(r.potential_base for r in counted),
@@ -139,10 +139,10 @@ def run_levers(run_id: str, *, client=None) -> LeverArtifact:
     (target / ARTIFACT_NAME).write_bytes(artifact.model_dump_json(indent=2).encode("utf-8"))
     record_step(run_id, STEP, [target / ARTIFACT_NAME])
     logger.info(
-        "levers identified: %d, de-duplicated potential %.0f (base) on %.0f addressable",
+        "levers identified: %d, de-duplicated potential %.0f (base) on %.0f analysable",
         len(results),
         artifact.total_base,
-        addressable,
+        analysable,
     )
     return artifact
 

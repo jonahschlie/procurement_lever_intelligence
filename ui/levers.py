@@ -75,10 +75,11 @@ def _headline(artifact, found: int, total: int) -> None:
     right.metric(
         "Potential — high", eur_compact(artifact.total_high), help=eur(artifact.total_high)
     )
-    base = artifact.total_base / artifact.addressable_spend if artifact.addressable_spend else 0
+    base = artifact.total_base / artifact.analysable_spend if artifact.analysable_spend else 0
     st.caption(
-        f"EUR, against {eur(artifact.addressable_spend)} of addressable spend "
-        f"({base:.1%} in the base case). Every euro counts towards one lever only. "
+        f"EUR, against {eur(artifact.analysable_spend)} of analysable spend "
+        f"({base:.1%} in the base case) — addressable spend less the bookings that name "
+        f"no supplier, which no lever can act on. Every euro counts towards one lever only. "
         f"{found} of {total} levers in the standard catalogue are quantified here; "
         "the rest are listed below with the reason."
     )

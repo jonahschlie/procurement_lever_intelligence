@@ -379,6 +379,8 @@ def test_report_shows_the_chain_from_booked_to_negotiable(run_root, portfolio_xl
         "Third party spend",
         "Not addressable",
         "Addressable spend",
+        "No supplier name",
+        "Analysable spend",
     ]
 
 

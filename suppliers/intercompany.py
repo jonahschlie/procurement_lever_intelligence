@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from core.canonical import bookings
 from core.config import INTERCOMPANY_MATCH, INTERCOMPANY_STEM_SHARE
 from suppliers.candidates import normalize_name, similarity
 
@@ -42,7 +43,7 @@ class IntercompanyCandidate:
 
 def group_entities(table: pd.DataFrame) -> list[str]:
     """The companies this analysis is about, as named by the data itself."""
-    rows = _bookings(table)
+    rows = bookings(table)
     names = set()
     # The canonical name first where company normalization has run: matching
     # against one spelling per entity beats matching against all of them.
@@ -51,17 +52,6 @@ def group_entities(table: pd.DataFrame) -> list[str]:
             names |= {value.strip() for value in rows[column].astype(str) if value.strip()}
     # A company identifier that is purely numeric carries no name to match against.
     return sorted(name for name in names if not name.replace("-", "").isdigit())
-
-
-def _bookings(table: pd.DataFrame) -> pd.DataFrame:
-    """Rows that record a booking, so aggregates cannot pose as companies.
-
-    A grand total row carries the group's name in its company column and its own
-    marker as a supplier; left in, it would nominate itself as a group entity.
-    """
-    if "flag_aggregate_row" not in table.columns:
-        return table
-    return table[~table["flag_aggregate_row"].astype(bool)]
 
 
 def group_stem(entities: list[str]) -> set[str]:
@@ -79,7 +69,7 @@ def detect_intercompany(
     """Suppliers that look like the group itself, with the evidence for each."""
     entities = group_entities(table)
     if suppliers is None:
-        rows = _bookings(table)
+        rows = bookings(table)
         suppliers = sorted(
             {value.strip() for value in rows["supplier"].astype(str) if value.strip()}
         )
