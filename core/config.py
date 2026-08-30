@@ -25,9 +25,10 @@ MAX_SAMPLE_LENGTH = 60
 
 # A required field missing beyond this share is a high-severity finding.
 MISSING_HIGH_RATIO = 0.05
-# Above this share of rows, a category column that merely repeats the GL text is
-# treated as accounting classification and category analysis is switched off.
-CATEGORY_EQUALS_GL_RATIO = 0.8
+# Above this share of rows, the category is determined by the GL description and
+# therefore renames the accounting classification instead of adding a procurement
+# one. Category analysis is switched off.
+CATEGORY_DEPENDENCY_RATIO = 0.9
 # Findings quote a handful of source rows so a reviewer can look them up.
 MAX_FINDING_EXAMPLES = 5
 

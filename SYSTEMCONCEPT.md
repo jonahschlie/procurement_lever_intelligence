@@ -445,13 +445,42 @@ If not
 
 ---
 
-### Category identical to GL Description?
+### Does the category say anything the GL description does not?
 
-If yes
+Comparing the two as strings is not enough. A category column is frequently the
+accounting text under tidier names, and the renaming hides the duplication:
 
-Category is treated as accounting classification.
+```
+ESS - SUBCONTRACTS    ->  Subcontracts
+PERSONNEL COSTS       ->  Payroll
+SPECIALIZED SERVICES  ->  Other Specialized Services
+```
 
-Category analysis disabled.
+None of these pairs match as strings, yet the category adds nothing. The check is
+therefore a **dependency measure**, not a comparison: for each GL description,
+what share of its rows carry that description's single most common category. If
+knowing the GL description predicts the category, the column renames the
+accounting classification.
+
+Above the configured share, category analysis is disabled.
+
+On a real submission this measured **100%** — 23 categories against 23 GL
+descriptions, an exact one-to-one relabeling. A string comparison saw 16.6% and
+would have left category analysis switched on.
+
+The measure is language-independent and needs no model, which is why profiling
+stays deterministic. Deriving usable categories where the export has none is a
+separate matter and belongs to AI enrichment in section 18.
+
+---
+
+### Supplier names in the category column
+
+Categories that are in fact one of the dataset's supplier names. On the same
+submission, 78 supplier names appeared as categories across 441 rows, inflating
+the apparent category count from 23 to 101 and masking the duplication above.
+
+Flagged and excluded from category analysis; the value itself is kept.
 
 ---
 
@@ -526,7 +555,8 @@ Example
 |---------|----------|----------|
 | Missing Supplier | 0.5% | High |
 | Duplicate Documents | 21 | Medium |
-| Category = GL | Yes | Warning |
+| Category predicted by GL | 100% | High |
+| Supplier names as categories | 78 values | Medium |
 | Supplier Variants | High | Medium |
 | Aggregate rows detected | 9 | High |
 | Detail vs subtotal gap | 3.4% | High |

@@ -14,7 +14,7 @@ import pandas as pd
 
 from core.canonical import CANONICAL_FIELDS, field_by_key
 from core.config import (
-    CATEGORY_EQUALS_GL_RATIO,
+    CATEGORY_DEPENDENCY_RATIO,
     MAX_FINDING_EXAMPLES,
     MISSING_HIGH_RATIO,
 )
@@ -301,23 +301,42 @@ def _semantic(table: pd.DataFrame) -> list[Finding]:
     category = table["category"].astype(str).str.strip()
     gl = table["gl_description"].astype(str).str.strip()
 
-    both = (category != "") & (gl != "")
-    identical = both & (category.str.casefold() == gl.str.casefold())
-    if both.any():
-        ratio = identical.sum() / both.sum()
+    contaminated = category_is_supplier(table)
+    if contaminated.any():
         findings.append(
             Finding(
-                check="Category equals GL description",
+                check="Supplier names in the category column",
                 category="semantic",
-                severity="high" if ratio >= CATEGORY_EQUALS_GL_RATIO else "info",
-                result=f"{ratio:.1%} of rows with both",
-                affected_rows=int(identical.sum()),
+                severity="medium",
+                result=f"{category[contaminated].nunique():,} values, {int(contaminated.sum()):,} rows",
+                affected_rows=int(contaminated.sum()),
                 detail=(
-                    f"{category.nunique():,} distinct categories against {gl.nunique():,} "
-                    "distinct GL descriptions. A category that merely repeats the GL text is "
-                    "an accounting classification, not a procurement one."
+                    "The category holds a supplier name rather than a category. These rows "
+                    "inflate the apparent number of categories and are excluded from category "
+                    "analysis, but the value itself is kept."
                 ),
-                examples=_examples(table, identical),
+                examples=_examples(table, contaminated),
+            )
+        )
+
+    both = (category != "") & (gl != "") & ~contaminated
+    if both.any():
+        dependency = _category_dependency(category[both], gl[both])
+        identical = int((category[both].str.casefold() == gl[both].str.casefold()).sum())
+        findings.append(
+            Finding(
+                check="Category duplicates the GL classification",
+                category="semantic",
+                severity="high" if dependency >= CATEGORY_DEPENDENCY_RATIO else "info",
+                result=f"{dependency:.1%} determined by the GL description",
+                affected_rows=int(both.sum()),
+                detail=(
+                    f"{category[both].nunique():,} categories against {gl[both].nunique():,} GL "
+                    f"descriptions, and knowing the GL description predicts the category in "
+                    f"{dependency:.1%} of rows. Comparing the strings alone would only have "
+                    f"matched {identical:,} of them, because a renaming such as "
+                    "'ESS - SUBCONTRACTS' to 'Subcontracts' is invisible to a string comparison."
+                ),
             )
         )
 
@@ -561,24 +580,55 @@ def _readiness(table: pd.DataFrame, amount: pd.Series, detail: pd.Series) -> lis
 
 
 def _category_decision(table: pd.DataFrame) -> tuple[bool, str]:
+    """Does the category say anything the GL description does not already say?
+
+    Measured as dependency rather than string similarity. A category column is
+    frequently the accounting text under tidier names -- 'ESS - SUBCONTRACTS'
+    becomes 'Subcontracts', 'PERSONNEL COSTS' becomes 'Payroll' -- which no
+    string comparison catches, in any language. If knowing the GL description
+    tells you the category, the column carries no procurement information.
+    """
     category = table["category"].astype(str).str.strip()
     gl = table["gl_description"].astype(str).str.strip()
 
     if (category == "").all():
         return False, "No procurement category is mapped, so there is nothing to analyse."
 
-    both = (category != "") & (gl != "")
-    if both.any():
-        ratio = (category[both].str.casefold() == gl[both].str.casefold()).mean()
-        if ratio >= CATEGORY_EQUALS_GL_RATIO:
-            return False, (
-                f"Category repeats the GL description in {ratio:.1%} of rows, so it is an "
-                "accounting classification rather than a procurement one."
-            )
+    # Supplier names that leaked into the column are not categories, and counting
+    # them would understate how strongly the real ones follow the GL description.
+    both = (category != "") & (gl != "") & ~category_is_supplier(table)
+    if not both.any():
+        return False, "No row carries both a category and a GL description to compare."
+
+    dependency = _category_dependency(category[both], gl[both])
+    if dependency >= CATEGORY_DEPENDENCY_RATIO:
+        return False, (
+            f"The GL description predicts the category in {dependency:.1%} of rows "
+            f"({category[both].nunique():,} categories against {gl[both].nunique():,} GL "
+            "descriptions), so the column renames the accounting classification rather than "
+            "adding a procurement one."
+        )
     return True, (
-        f"Category is populated in {(category != '').mean():.1%} of rows with "
-        f"{category.nunique():,} distinct values, and differs from the GL description."
+        f"Category is populated in {(category != '').mean():.1%} of rows and is only "
+        f"{dependency:.1%} predictable from the GL description, so it carries its own meaning."
     )
+
+
+def _category_dependency(category: pd.Series, gl: pd.Series) -> float:
+    """Share of rows whose category is the dominant one for their GL description."""
+    counts = pd.DataFrame({"category": category, "gl": gl}).groupby(["gl", "category"]).size()
+    return float(counts.groupby(level="gl").max().sum() / len(category))
+
+
+def category_is_supplier(table: pd.DataFrame) -> pd.Series:
+    """Rows whose category is actually one of the supplier names in this dataset."""
+    category = table["category"].astype(str).map(_collapse)
+    suppliers = set(table["supplier"].astype(str).map(_collapse)) - {""}
+    return (category != "") & category.isin(suppliers)
+
+
+def _collapse(value: str) -> str:
+    return re.sub(r"\s+", " ", value.casefold()).strip()
 
 
 def _normalize_supplier(name: str) -> str:

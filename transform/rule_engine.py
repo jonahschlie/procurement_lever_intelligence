@@ -18,7 +18,7 @@ from core.models import RuleEffect, RuleReport
 from core.run import get_logger, record_step, step_path
 from core.table import load_table, write_table
 from core.values import parse_amount_column, parse_date_column, spend_basis
-from profiling.data_profiling import load_confirmed
+from profiling.data_profiling import category_is_supplier, load_confirmed
 
 STEP = "rule_engine"
 ARTIFACT_NAME = "rule_report.json"
@@ -150,6 +150,7 @@ def _flags(
         # Text was present but could not be read as a number or a date.
         "flag_unparsable_amount": (~empty_text(table["amount_local"])) & local.isna(),
         "flag_unparsable_date": (~empty["posting_date"]) & posting.isna(),
+        "flag_category_is_supplier": category_is_supplier(table),
     }
 
 
@@ -177,7 +178,10 @@ def _eligibility(
         "include_supplier_analysis": spend & ~flags["flag_missing_supplier"],
         "include_company_analysis": spend & ~flags["flag_missing_company"],
         "include_category_analysis": (
-            spend & (table["category"].astype(str).str.strip() != "") & category_enabled
+            spend
+            & (table["category"].astype(str).str.strip() != "")
+            & ~flags["flag_category_is_supplier"]
+            & category_enabled
         ),
     }
 
@@ -197,6 +201,7 @@ _RULE_LABELS = {
     "flag_aggregate_row": "Embedded aggregate row",
     "flag_unparsable_amount": "Unreadable amount",
     "flag_unparsable_date": "Unreadable date",
+    "flag_category_is_supplier": "Supplier name in the category column",
 }
 
 _RULE_DETAILS = {
@@ -214,4 +219,5 @@ _RULE_DETAILS = {
     "flag_aggregate_row": "Restates other rows. Excluded from spend analyses.",
     "flag_unparsable_amount": "Text present but not readable as a number.",
     "flag_unparsable_date": "Text present but not readable as a date.",
+    "flag_category_is_supplier": "Not a category. Excluded from category analyses, value kept.",
 }

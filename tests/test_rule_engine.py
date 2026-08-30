@@ -122,3 +122,23 @@ def test_step_and_log_are_recorded(applied):
     log = (run_path(run_id) / "logs" / "run.log").read_text(encoding="utf-8")
     assert "rule engine complete" in log
     assert load_report(run_id) == report
+
+
+def test_a_supplier_name_in_the_category_column_is_excluded_from_category_analysis(
+    defective_run,
+):
+    from core.table import load_table, write_table
+
+    table = load_table(defective_run)
+    table.loc[0, "category"] = "Atlas Freight"
+    write_table(defective_run, table, "canonical_table")
+
+    run_profiling(defective_run)
+    confirm_profiling(defective_run)
+    run_rule_engine(defective_run)
+
+    rows = _flags(defective_run)
+    assert rows.loc["2", "flag_category_is_supplier"]
+    assert not rows.loc["2", "include_category_analysis"]
+    # The value itself is kept -- nothing is overwritten.
+    assert rows.loc["2", "category"] == "Atlas Freight"

@@ -89,12 +89,12 @@ def test_reconciliation_compares_detail_against_stated_subtotals(defective_run):
 def test_category_analysis_stays_on_when_the_category_says_something_else(defective_run):
     report = run_profiling(defective_run)
 
-    # Only one row repeats the GL text, well below the threshold.
+    # One GL description carries two different categories, so it does not predict them.
     assert report.category_analysis_enabled is True
-    assert "differs from the GL description" in report.category_decision
+    assert "carries its own meaning" in report.category_decision
 
 
-def test_category_analysis_is_switched_off_when_it_only_repeats_the_gl_text(
+def test_category_analysis_is_switched_off_when_it_only_renames_the_gl_text(
     run_root, defective_run
 ):
     from core.table import load_table, write_table
@@ -107,6 +107,41 @@ def test_category_analysis_is_switched_off_when_it_only_repeats_the_gl_text(
 
     assert report.category_analysis_enabled is False
     assert "accounting classification" in report.category_decision
+
+
+def test_a_renamed_category_is_caught_even_though_the_strings_differ(run_root, defective_run):
+    """The case a string comparison misses: 'ESS - SUBCONTRACTS' becomes 'Subcontracts'."""
+    from core.table import load_table, write_table
+
+    table = load_table(defective_run)
+    renamed = {
+        "Freight costs": "Logistics Services",
+        "Consulting": "Advisory",
+        "Office supplies": "Facility Management",
+        "Miscellaneous": "Other",
+        "Other expenses": "Other",
+    }
+    table["category"] = table["gl_description"].map(lambda gl: renamed.get(gl, ""))
+    write_table(defective_run, table, "canonical_table")
+
+    report = run_profiling(defective_run)
+
+    # Not one category string equals its GL description, yet the column adds nothing.
+    assert report.category_analysis_enabled is False
+    assert "100.0%" in report.category_decision
+
+
+def test_supplier_names_in_the_category_column_are_reported(run_root, defective_run):
+    from core.table import load_table, write_table
+
+    table = load_table(defective_run)
+    table.loc[0, "category"] = "Atlas Freight"  # a supplier, not a category
+    write_table(defective_run, table, "canonical_table")
+
+    finding = _by_check(run_profiling(defective_run))["Supplier names in the category column"]
+
+    assert finding.affected_rows == 1
+    assert finding.severity == "medium"
 
 
 def test_value_formats_are_recorded(defective_run):
