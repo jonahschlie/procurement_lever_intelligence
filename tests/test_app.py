@@ -376,3 +376,46 @@ def test_report_shows_the_chain_from_booked_to_negotiable(run_root, portfolio_xl
         "Not addressable",
         "Addressable spend",
     ]
+
+
+def test_lever_page_is_empty_before_levers_are_identified(run_root):
+    app = _page("levers")
+
+    assert not app.exception
+    assert app.title[0].value == "Procurement Levers"
+    assert "No levers yet" in app.info[0].value
+
+
+def test_lever_page_shows_the_calculation_openly(run_root, portfolio_xlsx):
+    from agents.lever_reasoning import LeverReasoningProposal
+    from classification.spend_classification import confirm_classification
+    from levers.engine import run_levers
+    from suppliers.normalization import confirm_suppliers
+
+    run_id = _analysed_run(portfolio_xlsx)
+    confirm_suppliers(run_id)
+    confirm_classification(run_id)
+    run_levers(
+        run_id,
+        client=FakeClient(
+            LeverReasoningProposal(
+                levers=[], priority_rationale="", recommended_order=[], order_reason=""
+            )
+        ),
+    )
+
+    app = _page("levers", run_id=run_id)
+
+    assert not app.exception
+    assert [m.label for m in app.metric] == [
+        "Potential — low",
+        "Potential — base",
+        "Potential — high",
+    ]
+    # The rates are an assumption and must be labelled as one, not buried.
+    assert any("assumptions, not findings" in w.value for w in app.warning)
+
+    priority = app.dataframe[0].value
+    assert list(priority.columns) == [
+        "#", "Lever", "Spend it applies to", "Potential (base)", "Range", "Effort", "Confidence",
+    ]

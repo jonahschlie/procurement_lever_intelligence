@@ -35,6 +35,29 @@ def render() -> None:
     _completeness(run_id, table)
     _suppliers(run_id, report, table)
 
+    st.divider()
+    if st.button("Identify levers", type="primary"):
+        _identify_levers(run_id)
+
+
+def _identify_levers(run_id: str) -> None:
+    from levers.engine import has_artifact, run_levers
+
+    with st.status("Identifying levers", expanded=True) as status:
+        if not has_artifact(run_id):
+            st.write("Measuring each lever and assigning every euro to one of them")
+            artifact = run_levers(run_id)
+        else:
+            from levers.engine import load_artifact
+
+            artifact = load_artifact(run_id)
+        status.update(
+            label=f"{len(artifact.levers)} levers, {artifact.total_base:,.0f} EUR (base)",
+            state="complete",
+        )
+    st.session_state["switch_to"] = "levers"
+    st.rerun()
+
 
 def _chain(report) -> None:
     st.subheader("From booked to negotiable")

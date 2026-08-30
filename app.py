@@ -12,7 +12,15 @@ import streamlit as st
 from dotenv import load_dotenv
 from streamlit.errors import StreamlitSecretNotFoundError
 
-from ui import canonical_table, report, review, schema_mapping, start, workbook_review
+from ui import (
+    canonical_table,
+    levers,
+    report,
+    review,
+    schema_mapping,
+    start,
+    workbook_review,
+)
 
 SECRET_KEYS = ("OPENAI_API_KEY", "OPENAI_MODEL", "OPENAI_TIMEOUT")
 
@@ -50,6 +58,7 @@ PAGES = {
     ),
     "review": st.Page(review.render, title="Review & Confirm", url_path="review"),
     "report": st.Page(report.render, title="Data Quality Report", url_path="report"),
+    "levers": st.Page(levers.render, title="Procurement Levers", url_path="levers"),
 }
 
 navigation = st.navigation(list(PAGES.values()))

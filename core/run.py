@@ -32,6 +32,7 @@ PIPELINE_STEPS = (
     "currency",
     "supplier_normalization",
     "spend_classification",
+    "levers",
 )
 
 RUN_MANIFEST_NAME = "run.json"

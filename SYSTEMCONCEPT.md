@@ -173,7 +173,8 @@ Dashboard
 | Supplier Normalization | 11 | built |
 | Intercompany and Addressability | 11 | built |
 | Canonical Spend Cube | 14 | open |
-| Analytical Views and AI Reasoning | 15–19 | open |
+| Lever Quantification and Reasoning | 16.1 | built |
+| Analytical Views and AI Reasoning | 15, 17–19 | open |
 
 ---
 
@@ -1161,6 +1162,85 @@ Potential
 - Best practice transfer
 - Synergy realization
 - Faster value creation
+
+---
+
+# 16.1 Quantifying the Levers
+
+Naming a lever is not enough; it has to carry a number a decision-maker can weigh,
+and that number has to survive being questioned.
+
+## What is derivable, and what is not
+
+From a booking-level export the platform quantifies four levers. The limit is the
+data, not the analysis:
+
+| Lever | Base measured on a real submission |
+| --- | --- |
+| Supplier Consolidation | Suppliers billing several companies |
+| Contract Coverage | Spend with suppliers the master lists without a contract |
+| Maverick / Process Compliance | No purchase order **and** supplier absent from the master |
+| Tail Spend | Suppliers each below a small share, carrying many small bookings |
+
+Portfolio Benchmark is reported as a **diagnostic rather than a fifth pot**: the
+action it implies — transfer what the best company does — *is* the other levers,
+applied where they bite hardest. Giving it a potential of its own would count the
+same euros twice.
+
+Category Consolidation waits for generated categories (section 18). Price variance,
+payment terms and spend growth are not derivable at all from an export without line
+items, without payment conditions and covering a single year. That is stated rather
+than quietly omitted.
+
+## No euro is counted twice
+
+On a real submission **64.5% of addressable spend qualified for more than one
+lever**. Summing the levers would have counted the same money two and three times.
+
+Each euro is therefore credited to exactly one lever, taking the **most specific
+population first**: tail spend, then maverick, then contract coverage, then supplier
+consolidation, which applies to everything and so takes the remainder.
+
+Specificity is the criterion because it is a property of the data. Ordering by
+assumed saving rate would maximise the total and bias it optimistic.
+
+Two figures are always shown: **gross**, what a lever is worth examined alone, and
+**net**, its contribution after assignment. The net bases sum exactly to the
+addressable spend.
+
+## Saving rates are assumptions
+
+The percentages are practitioner ranges. They are **not derived from the data** and
+are labelled as such wherever they appear, with the rate shown next to every figure
+it produced and configurable without touching logic.
+
+What comes from the data is the base each lever applies to, which bookings those
+are, and how they were assigned. What comes from assumption is only the rate.
+
+## Priority is computed, not asserted
+
+Three measured quantities, none collapsed into an opaque score:
+
+- **Impact** — the net potential in the base case
+- **Effort** — how many suppliers and companies must be coordinated
+- **Confidence** — whether the base rests on evidence or on an absence of it
+
+Confidence is the honest one. A base built from a *missing* purchase order is weaker
+than one built from a confirmed supplier name, because absence has other
+explanations. The rating and its reason travel with the figure.
+
+## Traceability
+
+Every row carries which levers it qualifies for and which one it was credited to, so
+any figure can be filtered back to its bookings and from there, through the source
+row, into the uploaded file.
+
+## What the agent does
+
+It writes the opportunity and the next steps, and may propose a different order with
+an argument. It receives aggregates only — never a booking — and its output model has
+no numeric field, so it cannot contradict the arithmetic shown beside it. The
+pipeline answers what is there; the agent answers what to do about it.
 
 ---
 

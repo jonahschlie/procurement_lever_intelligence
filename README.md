@@ -29,7 +29,11 @@ Everything requiring judgement is gathered on one **Review & Confirm** screen; e
 appears afterwards in one **Data Quality Report**, which ends in the chain from gross spend to
 addressable spend.
 
-The spend cube and the analytical views follow.
+8. **Levers** — four quantified levers with a saving range each, every euro credited to exactly
+   one of them, priority computed from impact, effort and confidence, and each figure traceable
+   back to the bookings behind it.
+
+The management summary and the remaining analytical views follow.
 
 ## Setup
 
@@ -86,6 +90,8 @@ runs/run_20260829_233045/
     09_spend_classification/
         spend_classification.json              # addressability per cost type
         spend_classification_confirmed.json
+    10_levers/
+        levers.json                            # bases, rates, potentials, narrative
 ```
 
 Pipeline stages and screens are deliberately not the same thing: the run keeps every stage as its

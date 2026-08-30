@@ -343,6 +343,65 @@ class SpendReport(BaseModel):
     intercompany_suppliers: list[str]
 
 
+EffortLevel = Literal["low", "medium", "high"]
+ConfidenceLevel = Literal["low", "medium", "high"]
+
+
+class LeverContributor(BaseModel):
+    supplier: str
+    spend: float
+    rows: int
+    companies: int
+    contract_status: str
+
+
+class LeverResult(BaseModel):
+    """One lever: what it is worth, on what basis, and on which rows."""
+
+    lever_id: str
+    name: str
+    mechanism: str
+    gross_base: float
+    net_base: float
+    rows: int
+    suppliers: int
+    companies: int
+    rate_low: float
+    rate_base: float
+    rate_high: float
+    potential_low: float
+    potential_base: float
+    potential_high: float
+    effort: EffortLevel
+    effort_reason: str
+    confidence: ConfidenceLevel
+    confidence_reason: str
+    contributors: list[LeverContributor]
+    opportunity: str = ""
+    next_steps: list[str] = []
+
+
+class CompanyBenchmark(BaseModel):
+    company: str
+    spend: float
+    suppliers: int
+    po_coverage: float
+    uncontracted_share: float
+
+
+class LeverArtifact(BaseModel):
+    addressable_spend: float
+    levers: list[LeverResult]
+    total_low: float
+    total_base: float
+    total_high: float
+    benchmark: list[CompanyBenchmark]
+    priority_rationale: str = ""
+    agent_order: list[str] = []
+    agent_order_reason: str = ""
+    llm_call: LlmCall | None = None
+
+
 class StepRecord(BaseModel):
     step: str
     completed_at: datetime

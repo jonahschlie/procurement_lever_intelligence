@@ -56,3 +56,26 @@ SUPPLIER_CANDIDATE_FLOOR = 0.70
 INTERCOMPANY_MATCH = 0.85
 # Share of company names a token must appear in to count as the group's own name.
 INTERCOMPANY_STEM_SHARE = 0.5
+
+# --- Levers ---------------------------------------------------------------
+# Saving rates are ASSUMPTIONS, not derived from any dataset. They live here so
+# they can be replaced with a firm's own benchmarks without touching logic, and
+# the UI shows every rate next to the figure it produced.
+LEVER_RATES = {
+    "supplier_consolidation": (0.02, 0.04, 0.07),
+    "contract_coverage": (0.01, 0.03, 0.05),
+    "maverick": (0.02, 0.05, 0.10),
+    "tail_spend": (0.05, 0.10, 0.15),
+}
+
+# Which lever claims a euro when several apply. Ordered by how specific the
+# population is -- a property of the data rather than of the assumed rates.
+# Ordering by rate instead would maximise the total and bias it optimistic.
+LEVER_PRECEDENCE = ("tail_spend", "maverick", "contract_coverage", "supplier_consolidation")
+
+# A supplier below this share of addressable spend counts as tail.
+TAIL_SPEND_THRESHOLD = 0.01
+
+# Effort rubric: how many suppliers and companies have to be coordinated.
+EFFORT_SUPPLIERS = (10, 30)
+EFFORT_COMPANIES = (2, 5)
