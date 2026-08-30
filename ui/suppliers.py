@@ -3,6 +3,7 @@
 import pandas as pd
 import streamlit as st
 
+from core.table import load_table
 from suppliers.normalization import (
     confirm_suppliers,
     has_artifact,
@@ -127,6 +128,7 @@ def _render_result(run_id: str) -> None:
                     "Members": "  |  ".join(group.members),
                     "Rows": group.row_count,
                     "Country": group.country or "-",
+                    "Contract": CONTRACT_TEXT[group.contract_on_file],
                     "Decided by": group.source,
                 }
                 for group in artifact.groups
@@ -137,6 +139,69 @@ def _render_result(run_id: str) -> None:
         hide_index=True,
     )
     st.caption(
-        "The canonical name, id and country sit in new columns beside the raw name — "
-        "`supplier` itself is untouched."
+        "The canonical name, id, country and contract status sit in new columns beside "
+        "the raw name — `supplier` itself is untouched."
+    )
+
+    _render_contract_lever(run_id)
+
+
+CONTRACT_TEXT = {True: "on file", False: "none", None: "unknown"}
+
+
+def _render_contract_lever(run_id: str) -> None:
+    """Contract coverage by spend -- the simplest form of SYSTEMCONCEPT section 12.
+
+    Spend concentrated on a supplier with no contract on file is a negotiation
+    lever that can be read straight off the master, without waiting for the cube.
+    """
+    table = load_table(run_id)
+    if "amount_eur" not in table.columns:
+        return
+
+    eligible = table[table["include_supplier_analysis"].astype(bool)].copy()
+    eligible = eligible[eligible["amount_eur"].notna()]
+    if eligible.empty:
+        return
+
+    total = eligible["amount_eur"].sum()
+    by_status = eligible.groupby("supplier_contract_status")["amount_eur"].sum()
+
+    st.subheader("Contract coverage")
+    st.markdown(
+        "Spend sitting with suppliers that have no contract on file is where contract "
+        "optimization starts. *Unknown* means the supplier is not in the submitted "
+        "master at all — a different statement from having no contract."
+    )
+
+    columns = st.columns(3)
+    for column, (status, label) in zip(
+        columns, [("no", "No contract"), ("yes", "Contract on file"), ("unknown", "Unknown")]
+    ):
+        value = float(by_status.get(status, 0.0))
+        column.metric(
+            f"{label} (EUR)", f"{value:,.0f}", delta=f"{value / total:.1%}", delta_color="off"
+        )
+
+    uncovered = (
+        eligible[eligible["supplier_contract_status"] == "no"]
+        .groupby("supplier_normalized")["amount_eur"]
+        .agg(["sum", "count"])
+        .nlargest(10, "sum")
+    )
+    if uncovered.empty:
+        return
+
+    st.caption("Largest spend without a contract on file")
+    st.dataframe(
+        pd.DataFrame(
+            {
+                "Supplier": uncovered.index,
+                "Spend (EUR)": uncovered["sum"].round(0),
+                "Transactions": uncovered["count"],
+                "Share of spend": (uncovered["sum"] / total).map("{:.1%}".format),
+            }
+        ),
+        width="stretch",
+        hide_index=True,
     )

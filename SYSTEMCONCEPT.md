@@ -689,8 +689,25 @@ score alone would have collapsed into one supplier.
 deterministic and confident AI merges arrive preticked, uncertain ones do not.
 Rejected pairs stay visible. Nothing becomes canonical without confirmation.
 
-The result lands in new columns — canonical name, canonical id, country from the
-supplier master where one matched. The original name is never overwritten.
+The result lands in new columns — canonical name, canonical id, country and
+contract status from the supplier master where one matched. The original name is
+never overwritten.
+
+## Contract Status
+
+Where a submission ships a supplier master, its contract flag is carried into the
+table, because it identifies a lever without any further processing: spend
+concentrated on a supplier that has no contract on file is what section 12 calls
+contract optimization.
+
+The status is three-valued on purpose. A supplier listed in the master with a
+blank flag has **no contract**; a supplier absent from the master is **unknown**.
+Collapsing the two would invent a finding.
+
+Measured on a real submission: 43.2% of net spend (58.7m EUR) sits with suppliers
+that have no contract on file, 31.4% with suppliers that do, and 25.4% with
+suppliers the master does not list. Two suppliers alone account for 41.9m EUR of
+the uncovered spend.
 
 ---
 

@@ -6,8 +6,14 @@ never overwritten (SYSTEMCONCEPT section 11): the canonical name, id and country
 land in new columns beside `supplier`.
 
 The submission's supplier master joins the pool as ordinary names. A cluster
-that catches a master name inherits its id and country -- master matching is the
-same fuzzy problem as name matching, so it uses the same machinery.
+that catches a master name inherits its id, country and contract status -- master
+matching is the same fuzzy problem as name matching, so it uses the same
+machinery.
+
+Contract status is carried through because it identifies a lever directly: spend
+concentrated on a supplier with no contract on file is what section 12 calls
+contract optimization. It is three-valued on purpose. A supplier absent from the
+master is *unknown*, which is not the same claim as *no contract*.
 """
 
 from collections import Counter
@@ -32,6 +38,11 @@ ARTIFACT_NAME = "supplier_normalization.json"
 CONFIRMED_ARTIFACT_NAME = "supplier_normalization_confirmed.json"
 
 AI_SURE = 0.8
+
+# A blank flag in the master means the supplier is listed but has no contract on
+# file. Absence from the master entirely is a different thing, and stays unknown.
+CONTRACT_LABELS = {True: "yes", False: "no", None: "unknown"}
+CONTRACT_TRUE = frozenset({"Y", "YES", "TRUE", "X", "1", "J", "JA"})
 
 
 def run_supplier_normalization(run_id: str, *, client=None) -> SupplierNormalizationArtifact:
@@ -228,19 +239,21 @@ def _build_groups(pool, edges, counts, master) -> list[SupplierGroup]:
         )
 
         master_hit = next((name for name in members if name in master), None)
+        entry = master.get(master_hit, {}) if master_hit else {}
         sequence += 1
         groups.append(
             SupplierGroup(
                 group_id=sequence,
                 canonical_name=master_hit or max(data_members, key=lambda n: (counts[n], len(n))),
-                canonical_id=master[master_hit]["id"] if master_hit else f"PLI-{sequence:03d}",
+                canonical_id=entry.get("id") or f"PLI-{sequence:03d}",
                 members=sorted(data_members),
                 row_count=sum(counts[name] for name in data_members),
                 source=source,
                 confidence=round(confidence, 3),
                 comment=comment,
-                master_id=master[master_hit]["id"] if master_hit else None,
-                country=master[master_hit]["country"] if master_hit else None,
+                master_id=entry.get("id") if master_hit else None,
+                country=entry.get("country") if master_hit else None,
+                contract_on_file=entry.get("contract") if master_hit else None,
                 approved=approved,
             )
         )
@@ -248,21 +261,43 @@ def _build_groups(pool, edges, counts, master) -> list[SupplierGroup]:
 
 
 def _write_columns(run_id: str, artifact: SupplierNormalizationArtifact) -> None:
-    lookup: dict[str, tuple[str, str, str]] = {}
+    blank = {"name": "", "id": "", "country": "", "contract": "unknown"}
+    lookup: dict[str, dict[str, str]] = {}
     for group in artifact.groups:
+        contract = CONTRACT_LABELS[group.contract_on_file]
         if group.approved:
             for member in group.members:
-                lookup[member] = (group.canonical_name, group.canonical_id, group.country or "")
+                lookup[member] = {
+                    "name": group.canonical_name,
+                    "id": group.canonical_id,
+                    "country": group.country or "",
+                    "contract": contract,
+                }
         else:
+            # A rejected group falls apart, so its members keep their own identity
+            # and inherit nothing from the master hit the group had.
             for index, member in enumerate(group.members, start=1):
-                lookup[member] = (member, f"{group.canonical_id}-{index}", "")
+                lookup[member] = {
+                    "name": member,
+                    "id": f"{group.canonical_id}-{index}",
+                    "country": "",
+                    "contract": "unknown",
+                }
 
     table = load_table(run_id)
     raw = table["supplier"].astype(str).str.strip()
-    table["supplier_normalized"] = raw.map(lambda name: lookup.get(name, (name, "", ""))[0])
-    table["supplier_canonical_id"] = raw.map(lambda name: lookup.get(name, ("", "", ""))[1])
-    table["supplier_country"] = raw.map(lambda name: lookup.get(name, ("", "", ""))[2])
-    write_table(run_id, table, STEP, note="canonical supplier names, ids and countries")
+
+    def column(key, default=""):
+        return raw.map(lambda name: lookup.get(name, blank).get(key, default))
+
+    table["supplier_normalized"] = raw.map(lambda name: lookup.get(name, blank)["name"] or name)
+    table["supplier_canonical_id"] = column("id")
+    table["supplier_country"] = column("country")
+    # Rows with no supplier at all say nothing about contracts either.
+    table["supplier_contract_status"] = column("contract").where(raw != "", "")
+    write_table(
+        run_id, table, STEP, note="canonical supplier names, ids, countries and contract status"
+    )
 
 
 def _context(table: pd.DataFrame, master) -> dict[str, dict]:
@@ -300,6 +335,18 @@ def _load_master(run_id: str) -> dict[str, dict]:
     name_col = next((c for c in frame.columns if "name" in c.lower()), None)
     id_col = next((c for c in frame.columns if "id" in c.lower()), None)
     country_col = next((c for c in frame.columns if "country" in c.lower()), None)
+    contract_col = next((c for c in frame.columns if "contract" in c.lower()), None)
+
+    # Column detection is by header wording, so say what was recognised. A master
+    # that is present but unreadable would otherwise look like no master at all.
+    get_logger(run_id).info(
+        "supplier master: %d row(s), columns name=%r id=%r country=%r contract=%r",
+        len(frame),
+        name_col,
+        id_col,
+        country_col,
+        contract_col,
+    )
     if name_col is None:
         return {}
 
@@ -310,6 +357,13 @@ def _load_master(run_id: str) -> dict[str, dict]:
             master[name] = {
                 "id": str(row[id_col]).strip() if id_col else "",
                 "country": str(row[country_col]).strip() if country_col else "",
+                # Listed but blank means no contract; a missing column means we
+                # genuinely do not know.
+                "contract": (
+                    str(row[contract_col]).strip().upper() in CONTRACT_TRUE
+                    if contract_col
+                    else None
+                ),
             }
     return master
 

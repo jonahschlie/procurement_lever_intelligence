@@ -20,7 +20,9 @@ Implemented so far:
 6. **Currency** — amounts are converted to EUR at the ECB daily rate of their posting date. Spend
    counts net, with gross and credit volume reported alongside.
 7. **Suppliers** — name variants are matched deterministically, the unclear pairs judged by an
-   agent, and every merge confirmed before it becomes canonical.
+   agent, and every merge confirmed before it becomes canonical. Contract status from the
+   submitted supplier master is carried through, which surfaces the first lever: spend sitting
+   with suppliers that have no contract on file.
 
 The spend cube and the analytical views follow.
 

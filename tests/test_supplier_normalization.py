@@ -142,3 +142,60 @@ def test_the_user_can_rename_the_canonical_supplier(name_run):
 
     table = load_table(name_run).set_index("source_row")
     assert table.loc["2", "supplier_normalized"] == "Atlas Freight & Logistics AB"
+
+
+def _master_with_contracts(run_id):
+    return {
+        "Atlas Freight & Logistics": {"id": "SUP-1", "country": "SE", "contract": True},
+        "Sopra Steria": {"id": "SUP-2", "country": "FR", "contract": False},
+    }
+
+
+def test_contract_status_comes_from_the_master(name_run, monkeypatch):
+    monkeypatch.setattr(normalization, "_load_master", _master_with_contracts)
+
+    artifact = run_supplier_normalization(name_run, client=FakeClient(_same()))
+
+    groups = {g.canonical_id: g for g in artifact.groups}
+    assert groups["SUP-1"].contract_on_file is True
+    assert groups["SUP-2"].contract_on_file is False
+    # A supplier the master does not list is unknown, not "no contract".
+    others = [g for g in artifact.groups if g.master_id is None]
+    assert others and all(g.contract_on_file is None for g in others)
+
+
+def test_contract_status_lands_in_the_table_three_valued(name_run, monkeypatch):
+    monkeypatch.setattr(normalization, "_load_master", _master_with_contracts)
+    run_supplier_normalization(name_run, client=FakeClient(_same()))
+
+    confirm_suppliers(name_run)
+
+    rows = load_table(name_run).set_index("source_row")
+    assert rows.loc["2", "supplier_contract_status"] == "yes"  # Atlas cluster
+    assert rows.loc["3", "supplier_contract_status"] == "no"  # Sopra cluster
+    # Row 4 has no supplier at all, so it makes no claim either way.
+    assert rows.loc["4", "supplier_contract_status"] == ""
+
+
+def test_a_blank_flag_means_no_contract_a_missing_column_means_unknown(name_run, monkeypatch):
+    monkeypatch.setattr(
+        normalization,
+        "_load_master",
+        lambda run_id: {"Sopra Steria": {"id": "SUP-9", "country": "", "contract": None}},
+    )
+
+    artifact = run_supplier_normalization(name_run, client=FakeClient(_same()))
+
+    sopra = next(g for g in artifact.groups if g.master_id == "SUP-9")
+    assert sopra.contract_on_file is None
+
+
+def test_a_rejected_group_does_not_inherit_a_contract_status(name_run, monkeypatch):
+    monkeypatch.setattr(normalization, "_load_master", _master_with_contracts)
+    artifact = run_supplier_normalization(name_run, client=FakeClient(_same()))
+    atlas = next(g for g in artifact.groups if g.canonical_id == "SUP-1")
+
+    confirm_suppliers(name_run, approvals={atlas.group_id: False})
+
+    rows = load_table(name_run).set_index("source_row")
+    assert rows.loc["2", "supplier_contract_status"] == "unknown"

@@ -285,6 +285,9 @@ class SupplierGroup(BaseModel):
     comment: str
     master_id: str | None = None
     country: str | None = None
+    # None where the supplier is not in the master at all: that is "unknown",
+    # which is a different statement from "no contract on file".
+    contract_on_file: bool | None = None
     approved: bool
 
 
