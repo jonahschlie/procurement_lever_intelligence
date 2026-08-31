@@ -2,11 +2,18 @@
 
 Transforms heterogeneous ERP exports from private equity portfolio companies into a
 standardized procurement data model, and identifies procurement value creation levers on top
-of it.
+of it — a fixed catalogue of fifteen, quantified where the data carries them, with the gap
+named where it does not.
 
-## Status
+One principle runs through everything: whatever can be calculated is calculated. Amounts,
+deduplication, currency conversion and every lever figure come from deterministic code. AI is
+used only where meaning has to be interpreted — which sheet holds data, what a column means,
+whether two supplier spellings are one firm, whether a cost type is addressable — and every AI
+answer is validated against a schema, reconciled deterministically, and shown to the user for
+confirmation before it counts. The LLM never modifies financial values and never performs
+calculations.
 
-Implemented so far:
+## The pipeline
 
 1. **Ingestion** — upload ERP exports and store them unchanged with their parse metadata.
 2. **Workbook triage** — work out what each sheet of a submission is for. Shape decides what is a
@@ -69,6 +76,11 @@ defaults to `gpt-5-mini`. On Streamlit Cloud the same keys are read from `st.sec
 uv run streamlit run app.py    # http://localhost:8501
 uv run pytest
 ```
+
+The test suite needs no API key: agents are faked at the client seam, and the fixtures are
+synthetic exports in four ERP dialects — none of them derived from any real submission. A full
+analysis run of an 18,000-row export makes about six model calls and costs a few cents; the
+sidebar shows the exact figure live.
 
 ## Run workspaces
 
