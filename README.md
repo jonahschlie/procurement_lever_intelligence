@@ -2,7 +2,7 @@
 
 Transforms heterogeneous ERP exports from private equity portfolio companies into a
 standardized procurement data model, and identifies procurement value creation levers on top
-of it. See [SYSTEMCONCEPT.md](SYSTEMCONCEPT.md) for the architecture and functional concept.
+of it.
 
 ## Status
 
@@ -153,7 +153,7 @@ root rather than inside a step directory — it belongs to no single step, it is
 Later steps add quality flags to it rather than writing tables of their own, so each step finds the
 current version in one place.
 
-Rows are never removed from it (SYSTEMCONCEPT section 12): eligibility for an analysis is expressed
+Rows are never removed from it: eligibility for an analysis is expressed
 through flag columns, which is what keeps the totals reconcilable against the source. A rewrite
 therefore only ever adds columns, and `canonical_table.json` records what each step changed.
 

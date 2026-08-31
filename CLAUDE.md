@@ -6,17 +6,9 @@ AI Procurement Lever Identification Platform. Transforms heterogeneous ERP expor
 (SAP, Oracle, Dynamics, Infor, Sage) from private equity portfolio companies into a
 Canonical Spend Cube, then derives procurement value creation levers from it.
 
-## Source of Truth
+## Core Principle
 
-**`SYSTEMCONCEPT.md` is the reference for all architectural and functional decisions.**
-
-Read it before designing or implementing anything. It defines the pipeline stages, the
-canonical schema, profiling checks, rule engine behaviour, the Spend Cube structure, and
-the analytical views. If an implementation would deviate from it, raise that first instead
-of silently diverging. If the concept is silent on a detail, make the smallest decision
-consistent with its principles and say so.
-
-The core principle it establishes, restated because everything depends on it:
+Everything depends on this:
 
 > Everything that can be solved deterministically is solved deterministically.
 > AI is used only where semantic understanding or business reasoning is required.
