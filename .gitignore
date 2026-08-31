@@ -17,7 +17,7 @@ env/
 .ruff_cache/
 .mypy_cache/
 
-# --- Node (falls spaeter ein Frontend/Dashboard dazukommt) ---
+# --- Node (in case a frontend/dashboard is added later) ---
 node_modules/
 dist/
 build/
@@ -36,7 +36,7 @@ build/
 *.pem
 credentials.json
 
-# --- Daten- und Office-Artefakte ---
+# --- Data and Office artifacts ---
 ~$*.xlsx
 ~$*.docx
 *.tmp
